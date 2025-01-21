@@ -1,5 +1,5 @@
 from typing import Optional
-import asyncio
+import yaml
 
 import typer
 
@@ -43,4 +43,10 @@ def lock(
     """Generate a lockfile
     """
     solved_env = lock_environment(path=env_file)
-    print("solved env", solved_env)
+    
+    # If no output is specified dump yaml output to stdout
+    if output is None:
+        print(yaml.dump(solved_env.model_dump()))
+    else:
+        with open(output, "w+") as env_file:
+            yaml.dump(solved_env.model_dump(), env_file)

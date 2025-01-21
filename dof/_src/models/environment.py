@@ -16,14 +16,16 @@ class CondaEnvironmentSpec(BaseModel):
 
 class EnvironmentMetadata(BaseModel):
     """Metadata for an environment"""
-    version: str
+    spec_version: str = "0.0.1"
+    env_version: int
     platform: str
     build_hash: str
     channels: List[str]
-    conda_settings: Dict[str, Any]
+    conda_settings: Optional[Dict[str, Any]] = Field(default={})
 
 
 class EnvironmentSpec(BaseModel):
+    """Specifies a locked environment"""
     metadata: EnvironmentMetadata
     packages: List[Package]
     env_vars: Optional[Dict[str, str]] = None
