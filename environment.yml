@@ -1,0 +1,15 @@
+name: dof-dev
+channels:
+  - conda-forge
+dependencies:
+  # must be kept in sync with the min supported version in pyproject.toml
+  - python >=3.12
+  # conda builds
+  - conda
+  # dev dependencies
+  - pytest
+  - pytest-cov
+  # build dependencies
+  - hatch
+  - twine>=5.0.0
+  - pip

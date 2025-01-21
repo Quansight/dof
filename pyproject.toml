@@ -1,0 +1,71 @@
+### Build ###
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+
+### Project ###
+[project]
+name = "dof"
+description = "demo conda environemnts"
+version = "0.0.1"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+keywords = ["conda"]
+authors = [
+  { name = "Sophia Castellarin", email = "sophia.castellarin@quansight.com" },
+]
+dependencies = [
+    "typer",
+    "conda-lock >=1.0.5",
+    "conda-package-handling",
+    "conda-package-streaming",
+    "pydantic >=2.0",
+    "setuptools<70",
+]
+
+[project.urls]
+Source = "https://github.com/soapy1/dof"
+Issues = "https://github.com/soapy1/dof/issues"
+
+[project.scripts]
+dof = "dof.__main__:main"
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+lines_between_types = 1
+lines_after_imports = 2
+profile = 'black'
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+ignore = [
+    "E501", # line-length
+]
+select = [
+    "E",   # pycodestyle
+    "W",   # pycodestyle
+    "F",   # Pyflakes
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "I",   # isort
+    "N",   # pep8 naming
+    "D",   # pydocstyle
+    "ANN", # annotations
+    "T10", # debugger
+    "PT",  # flake8-pytest
+    "RET", # flake8-return
+    "ARG", # flake8-unused-arguments
+    "FIX", # flake8-fixme
+    "ERA", # flake8-eradicate
+    "PD",  # pandas-vet
+    "NPY", # numpy-specific rules
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
