@@ -1,0 +1,8 @@
+name: env1
+channels:
+  - conda-forge
+dependencies:
+  - flask
+  - numpy=1.9
+  - matplotlib
+  - pip

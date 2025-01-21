@@ -16,12 +16,11 @@ authors = [
   { name = "Sophia Castellarin", email = "sophia.castellarin@quansight.com" },
 ]
 dependencies = [
-    "typer",
-    "conda-lock >=1.0.5",
-    "conda-package-handling",
-    "conda-package-streaming",
+    "py-rattler",
     "pydantic >=2.0",
+    "pyyaml",
     "setuptools<70",
+    "typer",
 ]
 
 [project.urls]

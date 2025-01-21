@@ -1,6 +1,10 @@
 from typing import Optional
+import asyncio
 
 import typer
+
+from dof._src.lock import lock_environment
+
 
 app = typer.Typer()
 
@@ -18,20 +22,19 @@ def hello(name: Optional[str] = None):
 @app.command()
 def install(
     path: str = typer.Option(
-        None,
         help="path to lockfile"
     ),
 ):
     """Install a lockfile
     """
-    if path is None:
-        raise Exception("path is required to install")
-    
     print("not really installing")
 
 
 @app.command()
 def lock(
+    env_file: str = typer.Option(
+        help="path to environment file"
+    ),
     output: str = typer.Option(
         None,
         help="path to output lockfile"
@@ -39,7 +42,5 @@ def lock(
 ):
     """Generate a lockfile
     """
-    if output is None:
-        raise Exception("path is required to install")
-    
-    print("not really locking")
+    solved_env = lock_environment(path=env_file)
+    print("solved env", solved_env)
