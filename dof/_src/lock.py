@@ -28,7 +28,5 @@ async def _solve_environment(lock_spec: CondaEnvironmentSpec):
         channels=lock_spec.channels,
         # The specs to solve for
         specs=lock_spec.dependencies,
-        # Virtual packages define the specifications of the environment
-        virtual_packages=VirtualPackage.detect(),
     )
     return solved_records

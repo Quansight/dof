@@ -7,6 +7,7 @@ from dof._src.models.package import Package
 
 
 class CondaEnvironmentSpec(BaseModel):
+    """Input conda environment.yaml spec"""
     name: Optional[str]
     channels: List[str]
     dependencies: List[str]
@@ -14,6 +15,8 @@ class CondaEnvironmentSpec(BaseModel):
 
 
 class EnvironmentMetadata(BaseModel):
+    """Metadata for an environment"""
+    version: str
     platform: str
     build_hash: str
     channels: List[str]

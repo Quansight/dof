@@ -18,4 +18,8 @@ class PipPackage(BaseModel):
     url: str
 
 
-Package = Union[CondaPackage, PipPackage]
+class UrlPackage(BaseModel):
+    url: str
+
+
+Package = Union[CondaPackage, PipPackage, UrlPackage]
