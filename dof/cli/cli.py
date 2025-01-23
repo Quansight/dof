@@ -10,16 +10,6 @@ app = typer.Typer()
 
 
 @app.command()
-def hello(name: Optional[str] = None):
-    """Demo: say hello
-    """
-    if name:
-        typer.echo(f"Hello {name}")
-    else:
-        typer.echo("Hello World!")
-
-
-@app.command()
 def install(
     path: str = typer.Option(
         help="path to lockfile"
@@ -40,8 +30,7 @@ def lock(
         help="path to output lockfile"
     ),
 ):
-    """Generate a lockfile
-    """
+    """Generate a lockfile"""
     solved_env = lock_environment(path=env_file)
     
     # If no output is specified dump yaml output to stdout
@@ -50,3 +39,9 @@ def lock(
     else:
         with open(output, "w+") as env_file:
             yaml.dump(solved_env.model_dump(), env_file)
+
+
+@app.command()
+def checkpoint():
+    """Create a lockfile for the current env and set a checkpoint"""
+    print("todo")
