@@ -1,28 +1,34 @@
 import asyncio
 import yaml
-from rattler import solve, VirtualPackage
+
+from typing import List
+
+from rattler import solve, Platform
 
 from dof._src.models.environment import CondaEnvironmentSpec, EnvironmentSpec, EnvironmentMetadata
 from dof._src.models.package import UrlPackage
+from dof._src.utils import hash_string
 
 
-def lock_environment(path: str) -> EnvironmentSpec:
+def lock_environment(path: str, target_platform: str | None = None) -> EnvironmentSpec:
     lock_spec =  _parse_environment_file(path)
 
+    if target_platform is None:
+        target_platform = Platform.current()
+
     solution_packages = asyncio.run(
-        _solve_environment(lock_spec=lock_spec)
+        _solve_environment(lock_spec=lock_spec, platforms=[target_platform])
     )
 
     url_packages = []
     for pkg in solution_packages:
         url_packages.append(UrlPackage(url = pkg.url))
 
-    # TODO: fill in these values properly
     env_metadata = EnvironmentMetadata(
-        platform = "linux-64",
+        env_version = 0,
+        platform = str(target_platform),
         channels = lock_spec.channels,
-        env_version = 1,
-        build_hash = "12"
+        build_hash = hash_string(str(solution_packages)),
     )
 
     env_spec = EnvironmentSpec(
@@ -41,11 +47,10 @@ def _parse_environment_file(path: str) -> CondaEnvironmentSpec:
     return env_spec
 
 
-async def _solve_environment(lock_spec: CondaEnvironmentSpec):
+async def _solve_environment(lock_spec: CondaEnvironmentSpec, platforms: List[Platform]):
     solved_records = await solve(
-        # Channels to use for solving
         channels=lock_spec.channels,
-        # The specs to solve for
         specs=lock_spec.dependencies,
+        platforms=platforms,
     )
     return solved_records

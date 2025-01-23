@@ -1,7 +1,6 @@
 from typing import Dict, List, Optional, Any
 
 from pydantic import BaseModel, Field
-from pydantic_yaml import parse_yaml_raw_as, to_yaml_str
 
 from dof._src.models.package import Package
 
