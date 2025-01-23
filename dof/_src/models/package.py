@@ -1,4 +1,4 @@
-from typing import Dict, Union
+from typing import Dict, Union, Optional
 
 from pydantic import BaseModel
 
@@ -15,7 +15,8 @@ class CondaPackage(BaseModel):
 class PipPackage(BaseModel):
     name: str
     version: str
-    url: str
+    build: str
+    url: Optional[str] = None
 
 
 class UrlPackage(BaseModel):

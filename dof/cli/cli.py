@@ -1,9 +1,11 @@
-from typing import Optional
 import yaml
-
+import os
 import typer
+from typing import List
+import uuid
 
 from dof._src.lock import lock_environment
+from dof._src.models.environment import EnvironmentCheckpoint
 
 
 app = typer.Typer()
@@ -42,6 +44,19 @@ def lock(
 
 
 @app.command()
-def checkpoint():
-    """Create a lockfile for the current env and set a checkpoint"""
-    print("todo")
+def checkpoint(
+    tags: List[str] = typer.Option(
+        None,
+        help="path to output lockfile"
+    ),
+):
+    """Create a lockfile for the current env and set a checkpoint.
+    
+    Assumes that the user is currently in a conda environment
+    """
+    prefix = os.environ.get("CONDA_PREFIX")
+    if tags is None:
+        tags = [uuid.uuid4().hex]
+
+    chck = EnvironmentCheckpoint.from_prefix(prefix=prefix, tags=tags)
+    print(chck)

@@ -25,10 +25,9 @@ def lock_environment(path: str, target_platform: str | None = None) -> Environme
         url_packages.append(UrlPackage(url = pkg.url))
 
     env_metadata = EnvironmentMetadata(
-        env_version = 0,
         platform = str(target_platform),
         channels = lock_spec.channels,
-        build_hash = hash_string(str(solution_packages)),
+        build_hash = hash_string(str(url_packages)),
     )
 
     env_spec = EnvironmentSpec(
@@ -48,6 +47,7 @@ def _parse_environment_file(path: str) -> CondaEnvironmentSpec:
 
 
 async def _solve_environment(lock_spec: CondaEnvironmentSpec, platforms: List[Platform]):
+    # rattler solve works multiplatform and is super fast
     solved_records = await solve(
         channels=lock_spec.channels,
         specs=lock_spec.dependencies,
