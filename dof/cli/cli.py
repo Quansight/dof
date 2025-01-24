@@ -6,6 +6,7 @@ import uuid
 
 from dof._src.lock import lock_environment
 from dof._src.models.environment import EnvironmentCheckpoint
+from dof._src.data.local import LocalData
 
 
 app = typer.Typer()
@@ -55,8 +56,10 @@ def checkpoint(
     Assumes that the user is currently in a conda environment
     """
     prefix = os.environ.get("CONDA_PREFIX")
+    env_uuid = uuid.uuid4().hex
     if tags is None:
-        tags = [uuid.uuid4().hex]
+        tags = [env_uuid]
 
-    chck = EnvironmentCheckpoint.from_prefix(prefix=prefix, tags=tags)
-    print(chck)
+    chck = EnvironmentCheckpoint.from_prefix(prefix=prefix, tags=tags, uuid=env_uuid)
+    data = LocalData()
+    data.save_environment_checkpoint(chck, prefix)

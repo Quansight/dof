@@ -23,3 +23,12 @@ This will generate a lockfile for a given environment file
 ```
 $ dof lock --env-file demo-assets/env1.yml
 ```
+
+### `dof checkpoint`
+This command will checkpoint your environment. That is, take a snapshot of
+what is currently installed so that you can go back to it at any time.
+
+```
+$ dof checkpoint
+```
+

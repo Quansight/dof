@@ -45,10 +45,11 @@ class EnvironmentCheckpoint(BaseModel):
     """
     environment: EnvironmentSpec
     timestamp: str
+    uuid: str
     tags: List[str]
 
     @classmethod
-    def from_prefix(cls, prefix: str, tags: List[str] = []):
+    def from_prefix(cls, prefix: str, uuid: str, tags: List[str] = []):
         packages = []
         channels = set()
         for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
@@ -80,5 +81,6 @@ class EnvironmentCheckpoint(BaseModel):
         return cls(
             environment=env_spec,
             timestamp=str(datetime.datetime.now(datetime.UTC)),
+            uuid=uuid,
             tags=tags,
         )
