@@ -19,6 +19,7 @@ dependencies = [
     "py-rattler",
     "pydantic >=2.0",
     "pyyaml",
+    "rich",
     "setuptools<70",
     "typer",
 ]

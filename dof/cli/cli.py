@@ -3,6 +3,8 @@ import os
 import typer
 from typing import List
 import uuid
+from rich.table import Table
+import rich
 
 from dof._src.lock import lock_environment
 from dof._src.models.environment import EnvironmentCheckpoint
@@ -63,3 +65,21 @@ def checkpoint(
     chck = EnvironmentCheckpoint.from_prefix(prefix=prefix, tags=tags, uuid=env_uuid)
     data = LocalData()
     data.save_environment_checkpoint(chck, prefix)
+
+
+@app.command()
+def checkpoint_list():
+    """List all checkpoints for the current environment"""
+    data = LocalData()
+    prefix = os.environ.get("CONDA_PREFIX")
+    checkpoints = data.get_environment_checkpoints(prefix=prefix)
+
+    table = Table(title="Checkpoints")
+    table.add_column("uuid", justify="left", no_wrap=True)
+    table.add_column("tags", justify="left", no_wrap=True)
+    table.add_column("timestamp", justify="left", no_wrap=True)
+
+    for point in checkpoints:
+        table.add_row(point.uuid, str(point.tags), point.timestamp)
+
+    rich.print(table)
