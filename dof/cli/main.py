@@ -10,9 +10,12 @@ from dof._src.lock import lock_environment
 from dof._src.models.environment import EnvironmentCheckpoint
 from dof._src.data.local import LocalData
 
-
-app = typer.Typer()
-
+app = typer.Typer(
+    add_completion=True,
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 
 @app.command()
 def install(

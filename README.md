@@ -32,3 +32,9 @@ what is currently installed so that you can go back to it at any time.
 $ dof checkpoint
 ```
 
+To list all the current available checkpoints run
+
+```
+$ dof checkpoint list
+```
+
