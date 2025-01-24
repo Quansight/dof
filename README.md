@@ -29,7 +29,7 @@ This command will checkpoint your environment. That is, take a snapshot of
 what is currently installed so that you can go back to it at any time.
 
 ```
-$ dof checkpoint
+$ dof checkpoint save
 ```
 
 To list all the current available checkpoints run
