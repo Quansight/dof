@@ -81,4 +81,10 @@ def diff(
     prefix = os.environ.get("CONDA_PREFIX")
     env_uuid = uuid.uuid4().hex
     chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
-    
+    packages_in_current_not_in_target, packages_in_target_not_in_current = chck.diff(rev)
+
+    print(f"diff with rev {rev}")
+    for pkg in packages_in_current_not_in_target:
+        print(f"+ {pkg}")
+    for pkg in packages_in_target_not_in_current:
+        print(f"- {pkg}")

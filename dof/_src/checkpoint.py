@@ -57,4 +57,10 @@ class Checkpoint():
         self.data_dir.save_environment_checkpoint(self.env_checkpoint, self.prefix)
 
     def diff(self, revision: str):
-        pass
+        target_checkpoint = self.data_dir.get_environment_checkpoint(self.prefix, uuid=revision)
+        target_packages = target_checkpoint.environment.packages
+        current_packages = self.env_checkpoint.environment.packages
+
+        packages_in_current_not_in_target = [item for item in current_packages if item not in target_packages]
+        packages_in_target_not_in_current = [item for item in target_packages if item not in current_packages]
+        return packages_in_current_not_in_target, packages_in_target_not_in_current

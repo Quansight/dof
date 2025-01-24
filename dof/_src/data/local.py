@@ -49,3 +49,13 @@ class LocalData:
             checkpoints.append(environment.EnvironmentCheckpoint.parse_obj(contents))
         
         return checkpoints
+    
+    def get_environment_checkpoint(self, prefix: str, uuid: str) -> environment.EnvironmentCheckpoint:
+        target_dir = self._get_env_dir(prefix)
+        target_file = f"{target_dir}/{uuid}"
+        if not os.path.exists(target_file):
+            return None
+        
+        with open(target_file, 'r') as file:
+            contents = yaml.safe_load(file)
+            return environment.EnvironmentCheckpoint.parse_obj(contents)
