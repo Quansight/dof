@@ -1,13 +1,8 @@
 from typing import Dict, List, Optional, Any
-import datetime
 
 from pydantic import BaseModel, Field
-from conda.core.prefix_data import PrefixData
-from rattler import Platform
-
 
 from dof._src.models import package
-from dof._src.utils import hash_string
 
 
 class CondaEnvironmentSpec(BaseModel):
@@ -47,40 +42,3 @@ class EnvironmentCheckpoint(BaseModel):
     timestamp: str
     uuid: str
     tags: List[str]
-
-    @classmethod
-    def from_prefix(cls, prefix: str, uuid: str, tags: List[str] = []):
-        packages = []
-        channels = set()
-        for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
-            if prefix_record.subdir == "pypi":
-                packages.append(
-                    package.PipPackage(
-                        name=prefix_record.name,
-                        version=prefix_record.version,
-                        build=prefix_record.build,
-                    )
-                )
-            else:
-                channels.add(prefix_record.channel.name)
-                packages.append(
-                    package.UrlPackage(url=prefix_record.url)
-                )
-
-        env_metadata = EnvironmentMetadata(
-            platform = str(Platform.current()),
-            channels = channels,
-            build_hash = hash_string(str(packages)),
-        )
-
-        env_spec = EnvironmentSpec(
-            packages=packages,
-            metadata=env_metadata,
-        )
-
-        return cls(
-            environment=env_spec,
-            timestamp=str(datetime.datetime.now(datetime.UTC)),
-            uuid=uuid,
-            tags=tags,
-        )
