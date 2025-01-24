@@ -1,0 +1,51 @@
+from pathlib import Path
+from typing import List
+import os
+import yaml
+
+from dof._src.models import environment
+from dof._src.utils import get_name_from_prefix, ensure_dir
+
+def default_data_dir() -> Path:
+    dof_dir = os.environ.get("DOF_DIR", None)
+    if dof_dir is None:
+        dof_dir = Path.home() / ".dof"
+    else:
+        dof_dir = Path(dof_dir)
+    
+    return dof_dir / "data"
+
+class LocalData:
+    def __init__(self, data_dir: str | None = None):
+        self.data_dir = data_dir
+        if self.data_dir is None:
+            self.data_dir = str(default_data_dir())
+        
+        ensure_dir(self.data_dir)
+
+    def _get_env_dir(self, prefix: str):
+        name = get_name_from_prefix(prefix=prefix)
+        return f"{self.data_dir}/{name}"
+
+    def save_environment_checkpoint(self, checkpoint: environment.EnvironmentCheckpoint, prefix: str):
+        target_dir = self._get_env_dir(prefix)
+        ensure_dir(target_dir)
+        
+        target_file = f"{target_dir}/{checkpoint.uuid}"
+        with open(target_file, "w+") as file:
+            yaml.dump(checkpoint.model_dump(), file)
+    
+    def get_environment_checkpoints(self, prefix: str) -> List[environment.EnvironmentCheckpoint]:
+        target_dir = self._get_env_dir(prefix)
+        if not os.path.exists(target_dir):
+            return []
+        files = os.listdir(target_dir)
+
+        checkpoints = []
+        for file in files:
+            with open(os.path.join(target_dir, file), 'r') as file:
+                contents = yaml.safe_load(file)
+            
+            checkpoints.append(environment.EnvironmentCheckpoint.parse_obj(contents))
+        
+        return checkpoints

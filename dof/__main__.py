@@ -1,7 +1,7 @@
-from dof.cli import main
+from dof.cli import root
 
 def main():
-    main.app()
+    root.app()
 
 
 if __name__ == "__main__":
