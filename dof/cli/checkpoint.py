@@ -57,3 +57,14 @@ def list(
         table.add_row(point.uuid, str(point.tags), point.timestamp)
 
     rich.print(table)
+
+
+@checkpoint_command.command()
+def install(
+    ctx: typer.Context,
+    uuid: str = typer.Option(
+        help="uuid of the revision to install"
+    ),
+):
+    """Install a previous revision of the environment"""
+    print("not installing")

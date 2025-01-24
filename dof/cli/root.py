@@ -20,16 +20,6 @@ app.add_typer(
     rich_help_panel="Checkpoint",
 )
 
-@app.command()
-def install(
-    path: str = typer.Option(
-        help="path to lockfile"
-    ),
-):
-    """Install a lockfile
-    """
-    print("not really installing")
-
 
 @app.command()
 def lock(
