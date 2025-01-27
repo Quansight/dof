@@ -88,3 +88,17 @@ def diff(
         print(f"+ {pkg}")
     for pkg in packages_in_target_not_in_current:
         print(f"- {pkg}")
+
+@checkpoint_command.command()
+def show(
+    ctx: typer.Context,
+    rev: str = typer.Option(
+        help="uuid of the revision to list packages for"
+    ),
+):
+    """Generate a list packages in an environment revision"""
+    prefix = os.environ.get("CONDA_PREFIX")
+    env_uuid = uuid.uuid4().hex
+    chck = Checkpoint.from_prefix(prefix=prefix, uuid=rev)
+    for pkg in chck.list():
+        print(pkg)

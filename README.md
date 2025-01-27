@@ -36,6 +36,12 @@ To see all the changes to the environment since your last checkpoint
 $ dof checkpoint diff --rev <revision uuid>
 ```
 
+To see all the packages in an environment
+
+```
+ $ dof checkpoint show --rev <revision uuid> 
+ ```
+
 #### Example
 
 Start with the `dof-dev` environment
