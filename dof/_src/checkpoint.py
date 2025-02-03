@@ -45,6 +45,12 @@ class Checkpoint():
             tags=tags,
         )
         return cls(env_checkpoint=env_checkpoint, prefix=prefix)
+
+    @classmethod
+    def from_uuid(cls, prefix: str, uuid: str):
+        data_dir = LocalData()
+        env_checkpoint = data_dir.get_environment_checkpoint(prefix, uuid)
+        return cls(env_checkpoint=env_checkpoint, prefix=prefix)
     
     def __init__(self, env_checkpoint: environment.EnvironmentCheckpoint, prefix: str):
         self.env_checkpoint = env_checkpoint

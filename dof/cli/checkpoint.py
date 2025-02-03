@@ -111,6 +111,6 @@ def show(
 ):
     """Generate a list packages in an environment revision"""
     prefix = os.environ.get("CONDA_PREFIX")
-    chck = Checkpoint.from_prefix(prefix=prefix, uuid=rev)
+    chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
     for pkg in chck.list_packages():
         print(pkg)
