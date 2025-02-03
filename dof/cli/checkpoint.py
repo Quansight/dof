@@ -40,6 +40,19 @@ def save(
 
 
 @checkpoint_command.command()
+def delete(
+    ctx: typer.Context,
+    rev: str = typer.Option(
+        help="uuid of the revision to delete"
+    ),
+):
+    """Delete a previous revision of the environment"""
+    prefix = os.environ.get("CONDA_PREFIX")
+    data = LocalData()
+    data.delete_environment_checkpoint(prefix=prefix, uuid=rev)
+
+
+@checkpoint_command.command()
 def list(
     ctx: typer.Context,
 ):
@@ -62,7 +75,7 @@ def list(
 @checkpoint_command.command()
 def install(
     ctx: typer.Context,
-    uuid: str = typer.Option(
+    rev: str = typer.Option(
         help="uuid of the revision to install"
     ),
 ):
@@ -98,7 +111,6 @@ def show(
 ):
     """Generate a list packages in an environment revision"""
     prefix = os.environ.get("CONDA_PREFIX")
-    env_uuid = uuid.uuid4().hex
     chck = Checkpoint.from_prefix(prefix=prefix, uuid=rev)
-    for pkg in chck.list():
+    for pkg in chck.list_packages():
         print(pkg)

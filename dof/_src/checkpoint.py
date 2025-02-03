@@ -65,5 +65,5 @@ class Checkpoint():
         packages_in_target_not_in_current = [item for item in target_packages if item not in current_packages]
         return packages_in_current_not_in_target, packages_in_target_not_in_current
 
-    def list(self):
+    def list_packages(self):
         return self.env_checkpoint.environment.packages

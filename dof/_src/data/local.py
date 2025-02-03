@@ -27,6 +27,12 @@ class LocalData:
         name = get_name_from_prefix(prefix=prefix)
         return f"{self.data_dir}/{name}"
 
+    def delete_environment_checkpoint(self, prefix: str, uuid: str):
+        target_dir = self._get_env_dir(prefix)
+        target_file = f"{target_dir}/{uuid}"
+        if os.path.exists(target_file):
+            os.remove(target_file)
+
     def save_environment_checkpoint(self, checkpoint: environment.EnvironmentCheckpoint, prefix: str):
         target_dir = self._get_env_dir(prefix)
         ensure_dir(target_dir)
