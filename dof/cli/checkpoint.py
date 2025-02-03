@@ -1,13 +1,13 @@
 import os
 import typer
 from typing import List
-import uuid
 from rich.table import Table
 import rich
 
 from dof._src.models.environment import EnvironmentCheckpoint
 from dof._src.checkpoint import Checkpoint
 from dof._src.data.local import LocalData
+from dof._src.utils import short_uuid
 
 
 checkpoint_command = typer.Typer(
@@ -31,7 +31,7 @@ def save(
     Assumes that the user is currently in a conda environment
     """
     prefix = os.environ.get("CONDA_PREFIX")
-    env_uuid = uuid.uuid4().hex
+    env_uuid = short_uuid()
     if tags is None:
         tags = [env_uuid]
 
@@ -92,7 +92,7 @@ def diff(
 ):
     """Generate a diff of the current environment to the specified revision"""
     prefix = os.environ.get("CONDA_PREFIX")
-    env_uuid = uuid.uuid4().hex
+    env_uuid = short_uuid()
     chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
     packages_in_current_not_in_target, packages_in_target_not_in_current = chck.diff(rev)
 
