@@ -111,3 +111,83 @@ diff with rev d1256c34d93c48eb96ccfb125c598ffe
 - url='https://conda.anaconda.org/conda-forge/linux-64/markupsafe-3.0.2-py312h178313f_1.conda'
 - url='https://conda.anaconda.org/conda-forge/noarch/jinja2-3.1.5-pyhd8ed1ab_0.conda'
 ```
+
+### pushing and pulling to park
+
+#### setup [park server](https://github.com/soapy1/park)
+
+```bash
+$ git clone https://github.com/soapy1/park.git
+$ cd park
+$ pixi install
+# run the server on port 8000
+$ pixi run dev
+```
+
+#### configure dof
+
+Make sure the park server is running and then set the `PARK_URL` environment variable.
+
+```bash
+$ export PARK_URL=http://localhost:8000
+```
+
+#### push a checkpoint to park
+
+To push a checkpoint to park, you can use the `dof push` command.
+
+```bash
+$ dof push --target <namespace>/<environment>:<tag> --rev <revision uuid>
+```
+
+#### pull a checkpoint from park
+
+To pull a checkpoint from park, you can use the `dof pull` command.
+
+```bash
+$ dof pull --target <namespace>/<environment>:<tag> --rev <revision uuid>
+```
+
+#### full example
+
+```bash
+$ dof checkpoint save
+$ dof checkpoint list                                             
+                         Checkpoints                          
+┏━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ uuid     ┃ tags         ┃ timestamp                        ┃
+┡━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ 8e45de08 │ ['8e45de08'] │ 2025-02-04 01:39:19.260525+00:00 │
+└──────────┴──────────────┴──────────────────────────────────┘
+
+
+$ dof push -t sophia/dof-dev:8e45de08 --rev 8e45de08
+
+$ curl http://localhost:8000/sophia                                    
+{"data":{"namespace":"sophia","environments":["dof-dev"]}}  
+
+$ curl http://localhost:8000/sophia/dof-dev       
+{"data":{"namespace":"sophia","environment":"dof-dev","checkpoints":["8e45de08"]}}  
+
+$ curl http://localhost:8000/sophia/dof-dev/8e45de08 | jq  --raw-output .data.checkpoint_data
+
+$ dof checkpoint delete --rev 8e45de08
+
+$ dof checkpoint list
+        Checkpoints        
+┏━━━━━━┳━━━━━━┳━━━━━━━━━━━┓
+┃ uuid ┃ tags ┃ timestamp ┃
+┡━━━━━━╇━━━━━━╇━━━━━━━━━━━┩
+└──────┴──────┴───────────┘
+
+
+$ dof pull -t sophia/dof-dev:8e45de08 --rev 8e45de08
+
+$ dof checkpoint list                                               
+                         Checkpoints                          
+┏━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ uuid     ┃ tags         ┃ timestamp                        ┃
+┡━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ 8e45de08 │ ['8e45de08'] │ 2025-02-04 01:39:19.260525+00:00 │
+└──────────┴──────────────┴──────────────────────────────────┘
+```

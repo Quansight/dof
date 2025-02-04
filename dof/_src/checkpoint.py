@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict
 import datetime
 
 from conda.core.prefix_data import PrefixData
@@ -50,6 +50,11 @@ class Checkpoint():
     def from_uuid(cls, prefix: str, uuid: str):
         data_dir = LocalData()
         env_checkpoint = data_dir.get_environment_checkpoint(prefix, uuid)
+        return cls(env_checkpoint=env_checkpoint, prefix=prefix)
+
+    @classmethod
+    def from_checkpoint_dict(cls, checkpoint_data: Dict, prefix: str):
+        env_checkpoint = environment.EnvironmentCheckpoint.model_validate(checkpoint_data)
         return cls(env_checkpoint=env_checkpoint, prefix=prefix)
     
     def __init__(self, env_checkpoint: environment.EnvironmentCheckpoint, prefix: str):
