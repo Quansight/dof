@@ -27,7 +27,7 @@ def save(
     ),
 ):
     """Create a lockfile for the current env and set a checkpoint.
-    
+
     Assumes that the user is currently in a conda environment
     """
     prefix = os.environ.get("CONDA_PREFIX")
@@ -74,13 +74,15 @@ def list(
 
 @checkpoint_command.command()
 def install(
-    ctx: typer.Context,
-    rev: str = typer.Option(
+    _ctx: typer.Context,
+    uuid: str | None = typer.Option(
         help="uuid of the revision to install"
     ),
-):
-    """Install a previous revision of the environment"""
-    print("not installing")
+) -> None:
+    """Install a previous revision of the environment."""
+    prefix = os.environ.get("CONDA_PREFIX")
+    if uuid:
+        Checkpoint.from_uuid(prefix, uuid).install()
 
 
 @checkpoint_command.command()

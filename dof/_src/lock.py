@@ -1,11 +1,13 @@
 import asyncio
+
 import yaml
+from rattler import Platform, RepoDataRecord, VirtualPackage, solve
 
-from typing import List
-
-from rattler import solve, Platform
-
-from dof._src.models.environment import CondaEnvironmentSpec, EnvironmentSpec, EnvironmentMetadata
+from dof._src.models.environment import (
+    CondaEnvironmentSpec,
+    EnvironmentMetadata,
+    EnvironmentSpec,
+)
 from dof._src.models.package import UrlPackage
 from dof._src.utils import hash_string
 
@@ -30,27 +32,28 @@ def lock_environment(path: str, target_platform: str | None = None) -> Environme
         build_hash = hash_string(str(url_packages)),
     )
 
-    env_spec = EnvironmentSpec(
+    return EnvironmentSpec(
         metadata = env_metadata,
         packages = url_packages,
+        solved_packages = solution_packages
     )
-
-    return env_spec
 
 
 def _parse_environment_file(path: str) -> CondaEnvironmentSpec:
-    with open(path, 'r') as file:
+    with open(path) as file:
         raw_env_spec = yaml.safe_load(file)
-    
-    env_spec = CondaEnvironmentSpec.parse_obj(raw_env_spec)
-    return env_spec
+
+    return CondaEnvironmentSpec.parse_obj(raw_env_spec)
 
 
-async def _solve_environment(lock_spec: CondaEnvironmentSpec, platforms: List[Platform]):
+async def _solve_environment(
+    lock_spec: CondaEnvironmentSpec,
+    platforms: list[Platform],
+) -> list[RepoDataRecord]:
     # rattler solve works multiplatform and is super fast
-    solved_records = await solve(
+    return await solve(
         channels=lock_spec.channels,
         specs=lock_spec.dependencies,
         platforms=platforms,
+        virtual_package=VirtualPackage.detect()
     )
-    return solved_records

@@ -1,18 +1,18 @@
-from typing import List, Dict
 import datetime
 
 from conda.core.prefix_data import PrefixData
-from rattler import Platform
+from rattler import Platform, PrefixRecord, install
 
-from dof._src.models import package, environment
-from dof._src.utils import hash_string
 from dof._src.data.local import LocalData
+from dof._src.models import environment, package
+from dof._src.utils import hash_string
 
 
-class Checkpoint():
+class Checkpoint:
     @classmethod
-    def from_prefix(cls, prefix: str, uuid: str, tags: List[str] = []):
+    def from_prefix(cls, prefix: str, uuid: str, tags: list[str] = []):
         packages = []
+        solved_packages = []
         channels = set()
         for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
             if prefix_record.subdir == "pypi":
@@ -29,6 +29,11 @@ class Checkpoint():
                     package.UrlPackage(url=prefix_record.url)
                 )
 
+            breakpoint()
+            solved_packages.append(
+                PrefixRecord.from_path()
+            )
+
         env_metadata = environment.EnvironmentMetadata(
             platform = str(Platform.current()),
             channels = channels,
@@ -37,6 +42,7 @@ class Checkpoint():
         env_spec = environment.EnvironmentSpec(
             packages=packages,
             metadata=env_metadata,
+            solved_packages=solved_packages,
         )
         env_checkpoint= environment.EnvironmentCheckpoint(
             environment=env_spec,
@@ -53,14 +59,14 @@ class Checkpoint():
         return cls(env_checkpoint=env_checkpoint, prefix=prefix)
 
     @classmethod
-    def from_checkpoint_dict(cls, checkpoint_data: Dict, prefix: str):
+    def from_checkpoint_dict(cls, checkpoint_data: dict, prefix: str):
         env_checkpoint = environment.EnvironmentCheckpoint.model_validate(checkpoint_data)
         return cls(env_checkpoint=env_checkpoint, prefix=prefix)
-    
+
     def __init__(self, env_checkpoint: environment.EnvironmentCheckpoint, prefix: str):
         self.env_checkpoint = env_checkpoint
         self.prefix = prefix
-        # TODO: this can be swapped out for a different data 
+        # TODO: this can be swapped out for a different data
         # dir type, eg to support remote data dirs
         self.data_dir = LocalData()
 
@@ -78,3 +84,9 @@ class Checkpoint():
 
     def list_packages(self):
         return self.env_checkpoint.environment.packages
+
+    def install(self):
+        install(
+            records=self.env_checkpoint.environment.solved_packages,
+            target_prefix=self.prefix,
+        )
