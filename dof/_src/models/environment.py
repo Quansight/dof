@@ -1,7 +1,9 @@
+import json
+import pathlib
 from typing import Any
 
-from pydantic import BaseModel, Field
-from rattler import RepoDataRecord
+from pydantic import BaseModel, Field, field_serializer, field_validator
+from rattler import PrefixRecord, RepoDataRecord, PackageRecord
 
 from dof._src.models import package
 
@@ -35,10 +37,6 @@ class EnvironmentSpec(BaseModel):
     metadata: EnvironmentMetadata
     packages: list[package.Package]
     env_vars: dict[str, str] | None = None
-    solved_packages: list[RepoDataRecord] = None
-
-    class Config:
-        arbitrary_types_allowed = True
 
 class EnvironmentCheckpoint(BaseModel):
     """An environment at a point in time

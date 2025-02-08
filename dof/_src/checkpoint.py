@@ -1,7 +1,10 @@
+import asyncio
 import datetime
+import pathlib
 
 from conda.core.prefix_data import PrefixData
 from rattler import Platform, PrefixRecord, install
+from rattler.rattler import PyRecord
 
 from dof._src.data.local import LocalData
 from dof._src.models import environment, package
@@ -12,7 +15,6 @@ class Checkpoint:
     @classmethod
     def from_prefix(cls, prefix: str, uuid: str, tags: list[str] = []):
         packages = []
-        solved_packages = []
         channels = set()
         for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
             if prefix_record.subdir == "pypi":
@@ -29,11 +31,6 @@ class Checkpoint:
                     package.UrlPackage(url=prefix_record.url)
                 )
 
-            breakpoint()
-            solved_packages.append(
-                PrefixRecord.from_path()
-            )
-
         env_metadata = environment.EnvironmentMetadata(
             platform = str(Platform.current()),
             channels = channels,
@@ -42,7 +39,6 @@ class Checkpoint:
         env_spec = environment.EnvironmentSpec(
             packages=packages,
             metadata=env_metadata,
-            solved_packages=solved_packages,
         )
         env_checkpoint= environment.EnvironmentCheckpoint(
             environment=env_spec,
@@ -85,8 +81,15 @@ class Checkpoint:
     def list_packages(self):
         return self.env_checkpoint.environment.packages
 
-    def install(self):
-        install(
-            records=self.env_checkpoint.environment.solved_packages,
-            target_prefix=self.prefix,
+    def install(self) -> None:
+        records = []
+        for f in (pathlib.Path(self.prefix) / "conda-meta").glob("*.json"):
+            records.append(
+                PrefixRecord.from_path(str(f))
+            )
+        asyncio.run(
+            install(
+                records=records,
+                target_prefix=self.prefix,
+            )
         )
