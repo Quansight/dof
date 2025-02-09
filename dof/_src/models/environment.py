@@ -1,9 +1,6 @@
-import json
-import pathlib
 from typing import Any
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
-from rattler import PrefixRecord, RepoDataRecord, PackageRecord
+from pydantic import BaseModel, Field
 
 from dof._src.models import package
 
