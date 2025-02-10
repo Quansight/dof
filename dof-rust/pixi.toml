@@ -1,0 +1,14 @@
+[project]
+authors = ["sophia <scastellarin@quansight.com>"]
+channels = ["conda-forge"]
+description = "Add a short description here"
+name = "dof-rust"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+build = "cargo build"
+start = "cargo run"
+
+[dependencies]
+rust = ">=1.84.0,<1.85"

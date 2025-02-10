@@ -56,3 +56,5 @@ yarn-debug.log*
 yarn-error.log*
 
 *.lockb
+
+**/dof-rust/target
