@@ -1,8 +1,14 @@
+from __future__ import annotations
+
+from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import BaseModel, Field
 
 from dof._src.models import package
+
+from ..utils import get_project_root
 
 
 class CondaEnvironmentSpec(BaseModel):
@@ -35,6 +41,49 @@ class EnvironmentSpec(BaseModel):
     packages: list[package.Package]
     env_vars: dict[str, str] | None = None
 
+class Dofspec(BaseModel):
+    spec: str
+    lock: str
+
+    @classmethod
+    def from_spec_and_lock(cls, specfile: str, lockfile: str) -> Dofspec:
+        if specfile.is_file():
+            with open(specfile) as f:
+                spec = f.read()
+        else:
+            raise ValueError("No environment.yml at the project root")
+
+        if lockfile.is_file():
+            with open(lockfile) as f:
+                lock = f.read()
+        else:
+            raise ValueError("No environment.yml at the project root")
+
+        return cls(spec=spec, lock=lock)
+
+    @classmethod
+    def generate_project_dofspec(
+        cls,
+        directory: str | Path,
+        root_path: Path = Path(".git/"),
+    ) -> Dofspec | None:
+        root = get_project_root(directory, root_path)
+        if not root:
+            raise ValueError("Can't find project root")
+
+        try:
+            dofspec = Dofspec.from_spec_and_lock(
+                specfile=root / "environment.yml",
+                lockfile=root / "pixi.lock",
+            )
+            # with open(root / ".dofspec", "w") as f:
+            #     yaml.dump(dofspec.model_dump(), f)
+        except ValueError:
+            return None
+
+        return dofspec
+
+
 class EnvironmentCheckpoint(BaseModel):
     """An environment at a point in time
 
@@ -45,3 +94,4 @@ class EnvironmentCheckpoint(BaseModel):
     timestamp: str
     uuid: str
     tags: list[str]
+    dofspec: Dofspec

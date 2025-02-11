@@ -1,14 +1,13 @@
-import yaml
 import os
-import typer
-from typing import List
-from typing_extensions import Annotated
+from typing import Annotated
 
-from dof._src.lock import lock_environment
+import typer
+import yaml
+
 from dof._src.checkpoint import Checkpoint
+from dof._src.lock import lock_environment
 from dof._src.park.park import Park
 from dof.cli.checkpoint import checkpoint_command
-
 
 app = typer.Typer(
     add_completion=False,
@@ -37,7 +36,7 @@ def lock(
 ):
     """Generate a lockfile"""
     solved_env = lock_environment(path=env_file)
-    
+
     # If no output is specified dump yaml output to stdout
     if output is None:
         print(yaml.dump(solved_env.model_dump()))

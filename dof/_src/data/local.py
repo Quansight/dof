@@ -1,39 +1,41 @@
-from pathlib import Path
-from typing import List
 import os
+from pathlib import Path
+
 import yaml
 
 from dof._src.models import environment
-from dof._src.utils import get_name_from_prefix, ensure_dir
+from dof._src.utils import ensure_dir, get_name_from_prefix
+
 
 def default_data_dir() -> Path:
     dof_dir = os.environ.get("DOF_DIR", None)
-    if dof_dir is None:
-        dof_dir = Path.home() / ".dof"
-    else:
-        dof_dir = Path(dof_dir)
+    dof_dir = Path.home() / ".dof" if dof_dir is None else Path(dof_dir)
 
     return dof_dir / "data"
 
 class LocalData:
-    def __init__(self, data_dir: str | None = None):
+    def __init__(self, data_dir: str | None = None) -> None:
         self.data_dir = data_dir
         if self.data_dir is None:
             self.data_dir = str(default_data_dir())
 
         ensure_dir(self.data_dir)
 
-    def _get_env_dir(self, prefix: str):
+    def _get_env_dir(self, prefix: str) -> str:
         name = get_name_from_prefix(prefix=prefix)
         return f"{self.data_dir}/{name}"
 
-    def delete_environment_checkpoint(self, prefix: str, uuid: str):
+    def delete_environment_checkpoint(self, prefix: str, uuid: str) -> None:
         target_dir = self._get_env_dir(prefix)
         target_file = f"{target_dir}/{uuid}"
         if os.path.exists(target_file):
             os.remove(target_file)
 
-    def save_environment_checkpoint(self, checkpoint: environment.EnvironmentCheckpoint, prefix: str):
+    def save_environment_checkpoint(
+        self,
+        checkpoint: environment.EnvironmentCheckpoint,
+        prefix: str,
+    ) -> None:
         target_dir = self._get_env_dir(prefix)
         ensure_dir(target_dir)
 
@@ -41,7 +43,10 @@ class LocalData:
         with open(target_file, "w+") as file:
             yaml.dump(checkpoint.model_dump(), file)
 
-    def get_environment_checkpoints(self, prefix: str) -> List[environment.EnvironmentCheckpoint]:
+    def get_environment_checkpoints(
+        self,
+        prefix: str,
+    ) -> list[environment.EnvironmentCheckpoint]:
         target_dir = self._get_env_dir(prefix)
         if not os.path.exists(target_dir):
             return []
@@ -49,19 +54,23 @@ class LocalData:
 
         checkpoints = []
         for file in files:
-            with open(os.path.join(target_dir, file), 'r') as file:
+            with open(os.path.join(target_dir, file)) as file:
                 contents = yaml.safe_load(file)
 
             checkpoints.append(environment.EnvironmentCheckpoint.parse_obj(contents))
 
         return checkpoints
 
-    def get_environment_checkpoint(self, prefix: str, uuid: str) -> environment.EnvironmentCheckpoint:
+    def get_environment_checkpoint(
+        self,
+        prefix: str,
+        uuid: str,
+    ) -> environment.EnvironmentCheckpoint:
         target_dir = self._get_env_dir(prefix)
         target_file = f"{target_dir}/{uuid}"
         if not os.path.exists(target_file):
             return None
 
-        with open(target_file, 'r') as file:
+        with open(target_file) as file:
             contents = yaml.safe_load(file)
             return environment.EnvironmentCheckpoint.parse_obj(contents)

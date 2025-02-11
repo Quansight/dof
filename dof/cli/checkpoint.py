@@ -1,14 +1,12 @@
 import os
-import typer
-from typing import List
-from rich.table import Table
-import rich
 
-from dof._src.models.environment import EnvironmentCheckpoint
+import rich
+import typer
+from rich.table import Table
+
 from dof._src.checkpoint import Checkpoint
 from dof._src.data.local import LocalData
 from dof._src.utils import short_uuid
-
 
 checkpoint_command = typer.Typer(
     add_completion=False,
@@ -21,10 +19,14 @@ checkpoint_command = typer.Typer(
 @checkpoint_command.command()
 def save(
     ctx: typer.Context,
-    tags: List[str] = typer.Option(
+    tags: list[str] = typer.Option(
         None,
         help="tags for the checkpoint"
     ),
+    directory: str | None = typer.Option(
+        None,
+        help="directory in which the lockfile for the given env lives"
+    )
 ):
     """Create a lockfile for the current env and set a checkpoint.
 
@@ -35,7 +37,12 @@ def save(
     if tags is None:
         tags = [env_uuid]
 
-    chck = Checkpoint.from_prefix(prefix=prefix, tags=tags, uuid=env_uuid)
+    chck = Checkpoint.from_prefix(
+        prefix=prefix,
+        tags=tags,
+        uuid=env_uuid,
+        directory=directory if directory is not None else "./",
+    )
     chck.save()
 
 
