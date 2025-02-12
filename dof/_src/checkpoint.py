@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+from collections import defaultdict
 
+import yaml
 from conda.core.prefix_data import PrefixData
-from rattler import Platform, install
+from rattler import Platform, install, LockFile
 
 from dof._src.data.local import LocalData
 from dof._src.models import environment, package
@@ -87,11 +89,13 @@ class Checkpoint:
         return self.env_checkpoint.environment.packages
 
     def install(self) -> None:
+        lock = yaml.safe_load(self.env_checkpoint.dofspec.lock)
 
-        spec = self.env_checkpoint.dofspec.spec
-        lock = self.env_checkpoint.dofspec.lock
+        records = []
         breakpoint()
-
+        for env_name, env in lock.environments():
+            for platform, packages in env.packages_by_platform():
+                print(packages)
         records = []
         asyncio.run(
             install(

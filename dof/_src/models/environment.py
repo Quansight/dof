@@ -1,10 +1,11 @@
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 from pathlib import Path
 from typing import Any
+from collections import defaultdict
 
-import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from rattler import LockFile, Platform
 
 from dof._src.models import package
 
@@ -41,6 +42,35 @@ class EnvironmentSpec(BaseModel):
     packages: list[package.Package]
     env_vars: dict[str, str] | None = None
 
+class LockedPackage(BaseModel):
+    data: Any
+
+class LockedEnvironment(BaseModel):
+    platform: dict[str, LockedPackage]
+
+class Lock(BaseModel):
+    environments: dict[str, LockedEnvironment]
+
+class LockedPlatform(BaseModel):
+    arch: str
+    kind: str
+
+    @classmethod
+    def from_platform(cls, platform: Platform) -> LockedPlatform:
+        if platform.is_linux:
+            kind = 'linux'
+        elif platform.is_osx:
+            kind = 'osx'
+        elif platform.is_unix:
+            kind = 'unix'
+        elif platform.is_windows:
+            kind = 'windows'
+
+        return cls(
+            arch=str(platform.arch),
+            kind=kind
+        )
+
 class Dofspec(BaseModel):
     spec: str
     lock: str
@@ -51,13 +81,13 @@ class Dofspec(BaseModel):
             with open(specfile) as f:
                 spec = f.read()
         else:
-            raise ValueError("No environment.yml at the project root")
+            raise ValueError(f"No {specfile} at the project root")
 
         if lockfile.is_file():
             with open(lockfile) as f:
                 lock = f.read()
         else:
-            raise ValueError("No environment.yml at the project root")
+            raise ValueError(f"No {lockfile} at the project root")
 
         return cls(spec=spec, lock=lock)
 
@@ -76,8 +106,6 @@ class Dofspec(BaseModel):
                 specfile=root / "environment.yml",
                 lockfile=root / "pixi.lock",
             )
-            # with open(root / ".dofspec", "w") as f:
-            #     yaml.dump(dofspec.model_dump(), f)
         except ValueError:
             return None
 
