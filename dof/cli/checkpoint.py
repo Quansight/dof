@@ -60,6 +60,7 @@ def list(
     data = LocalData()
     prefix = os.environ.get("CONDA_PREFIX")
     checkpoints = data.get_environment_checkpoints(prefix=prefix)
+    checkpoints.sort(key=lambda x: x.timestamp, reverse=True)
 
     table = Table(title="Checkpoints")
     table.add_column("uuid", justify="left", no_wrap=True)
