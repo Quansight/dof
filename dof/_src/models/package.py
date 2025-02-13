@@ -25,7 +25,9 @@ class CondaPackage(BaseModel):
         return f"conda: {self.name} - {self.version}"
     
     def __eq__(self, other):
-        return self.url == other.url
+        if isinstance(other, CondaPackage):
+            return self.url == other.url
+        return False
 
 
 class PipPackage(BaseModel):
@@ -36,6 +38,11 @@ class PipPackage(BaseModel):
 
     def __str__(self):
         return f"pip: {self.name} - {self.version}"
+    
+    def __eq__(self, other):
+        if isinstance(other, PipPackage):
+            return self.name == other.name and self.version == other.version and self.build == other.build
+        return False
 
 
 class UrlCondaPackage(BaseModel):

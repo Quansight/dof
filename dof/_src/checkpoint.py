@@ -16,6 +16,7 @@ class Checkpoint():
         channels = set()
         for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
             if prefix_record.subdir == "pypi":
+                # import pdb; pdb.set_trace()
                 packages.append(
                     package.PipPackage(
                         name=prefix_record.name,
@@ -83,11 +84,8 @@ class Checkpoint():
         target_packages = target_checkpoint.environment.packages
         current_packages = self.env_checkpoint.environment.packages
 
-        # BIG HACK: this only works because CondaPackages and PipPackages both have url fields
-        target_package_urls = [pkg.url for pkg in target_packages]
-        current_package_urls = [pkg.url for pkg in current_packages]
-        packages_in_current_not_in_target = [item for item in current_packages if item.url not in target_package_urls]
-        packages_in_target_not_in_current = [item for item in target_packages if item.url not in current_package_urls]
+        packages_in_current_not_in_target = [item for item in current_packages if item not in target_packages]
+        packages_in_target_not_in_current = [item for item in target_packages if item not in current_packages]
 
         return packages_in_current_not_in_target, packages_in_target_not_in_current
 
