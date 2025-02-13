@@ -1,10 +1,11 @@
 import os
 import typer
 from typing import List
+import asyncio
+
 from rich.table import Table
 import rich
 
-from dof._src.models.environment import EnvironmentCheckpoint
 from dof._src.checkpoint import Checkpoint
 from dof._src.data.local import LocalData
 from dof._src.utils import short_uuid
@@ -93,9 +94,7 @@ def install(
     for pkg in packages_in_target_not_in_current:
         print(f"+ {pkg}")
 
-    # WARNING: DOES NOT WORK FOR PIP
-    repodata_records = [pkg.to_repodata_record() for pkg in packages_in_target_not_in_current]
-    print(f"passing repodata records to rattler install: {repodata_records}")
+    asyncio.run(chck.install())
 
 
 @checkpoint_command.command()

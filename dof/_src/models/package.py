@@ -19,8 +19,8 @@ class CondaPackage(BaseModel):
         """Converts a url package into a rattler compatible repodata record."""
         pkg_record = PackageRecord(
              name=self.name, version=self.version, build=self.build,
-             build_number=self.build_number, subdir=self.subdir, arch=self.arch,
-             platform=self.platform
+             build_number=self.build_number, subdir=self.subdir, arch=None,
+             platform=None
         )
         return RepoDataRecord(
             package_record=pkg_record,
@@ -55,7 +55,8 @@ class PipPackage(BaseModel):
     
     def to_repodata_record(self):
         """Converts a url package into a rattler compatible repodata record."""
-        return
+        # no-op
+        pass
 
 
 class UrlCondaPackage(BaseModel):

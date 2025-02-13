@@ -1,8 +1,10 @@
 from typing import List, Dict
 import datetime
+import asyncio
 
 from conda.core.prefix_data import PrefixData
 from rattler import Platform
+from rattler import install as rattler_install
 
 from dof._src.models import package, environment
 from dof._src.utils import hash_string
@@ -35,7 +37,8 @@ class Checkpoint():
                         conda_channel=prefix_record.channel.url(),
                         # TODO
                         arch="",
-                        platform="",
+                        # not sure here
+                        platform="linux-64",
                         url=prefix_record.url
                     )
                 )
@@ -90,3 +93,9 @@ class Checkpoint():
 
     def list_packages(self):
         return self.env_checkpoint.environment.packages
+
+    async def install(self):
+        # WARNING: DOES NOT WORK FOR PIP
+        repodata_records = [pkg.to_repodata_record() for pkg in self.env_checkpoint.environment.packages]
+        repodata_records = [pkg for pkg in repodata_records if pkg is not None]
+        await rattler_install(repodata_records, target_prefix=self.prefix)
