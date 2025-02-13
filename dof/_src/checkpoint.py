@@ -26,7 +26,7 @@ class Checkpoint():
             else:
                 channels.add(prefix_record.channel.name)
                 packages.append(
-                    package.UrlPackage(url=prefix_record.url)
+                    package.UrlCondaPackage(url=prefix_record.url)
                 )
 
         env_metadata = environment.EnvironmentMetadata(

@@ -1,5 +1,5 @@
 from typing import Dict, Union, Optional
-
+from rattler import RepoDataRecord
 from pydantic import BaseModel
 
 
@@ -7,9 +7,17 @@ class CondaPackage(BaseModel):
     name: str
     version: str
     build: str
-    platform: str
+    build_number: str
+    subdir: str
+    # must be the full url of the channel, eg. 'https://conda.anaconda.org/conda-forge/win-64'
     conda_channel: str
-    hash: Dict[str, str]
+    arch: str
+    platform: str
+    url: str
+
+    def to_repodata_record(self):
+        """Converts a url package into a rattler compatible repodata record."""
+        pass
 
 
 class PipPackage(BaseModel):
@@ -22,7 +30,7 @@ class PipPackage(BaseModel):
         return f"pip: {self.name} - {self.version}"
 
 
-class UrlPackage(BaseModel):
+class UrlCondaPackage(BaseModel):
     url: str
 
     def __str__(self):
@@ -32,4 +40,4 @@ class UrlPackage(BaseModel):
         return f"conda: {name} - {version}"
 
 
-Package = Union[CondaPackage, PipPackage, UrlPackage]
+Package = Union[CondaPackage, PipPackage, UrlCondaPackage]

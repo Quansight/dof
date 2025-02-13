@@ -6,7 +6,7 @@ from typing import List
 from rattler import solve, Platform
 
 from dof._src.models.environment import CondaEnvironmentSpec, EnvironmentSpec, EnvironmentMetadata
-from dof._src.models.package import UrlPackage
+from dof._src.models.package import UrlCondaPackage
 from dof._src.utils import hash_string
 
 
@@ -22,7 +22,7 @@ def lock_environment(path: str, target_platform: str | None = None) -> Environme
 
     url_packages = []
     for pkg in solution_packages:
-        url_packages.append(UrlPackage(url = pkg.url))
+        url_packages.append(UrlCondaPackage(url = pkg.url))
 
     env_metadata = EnvironmentMetadata(
         platform = str(target_platform),
