@@ -16,7 +16,6 @@ class Checkpoint():
         channels = set()
         for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
             if prefix_record.subdir == "pypi":
-                # import pdb; pdb.set_trace()
                 packages.append(
                     package.PipPackage(
                         name=prefix_record.name,

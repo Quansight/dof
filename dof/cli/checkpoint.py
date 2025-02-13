@@ -93,6 +93,10 @@ def install(
     for pkg in packages_in_target_not_in_current:
         print(f"+ {pkg}")
 
+    # WARNING: DOES NOT WORK FOR PIP
+    repodata_records = [pkg.to_repodata_record() for pkg in packages_in_target_not_in_current]
+    print(f"passing repodata records to rattler install: {repodata_records}")
+
 
 @checkpoint_command.command()
 def diff(
