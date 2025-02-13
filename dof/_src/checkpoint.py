@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import logging
 import tempfile
 
 from conda.core.prefix_data import PrefixData
@@ -10,6 +11,8 @@ from rattler import LockFile, Platform, install, solve
 from dof._src.data.local import LocalData
 from dof._src.models import environment, package
 from dof._src.utils import hash_string
+
+log = logging.getLogger(__name__)
 
 
 class Checkpoint:
@@ -91,19 +94,22 @@ class Checkpoint:
         with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
             f.write(self.env_checkpoint.dofspec.lock)
 
-        lock = LockFile.from_path(f.name)
-
-        env = lock.default_environment()
+        env = LockFile.from_path(f.name).default_environment()
         channels = [ch._channel.as_str() for ch in env.channels()]
-        platform = str(Platform.current())
-
-        conda_solved = env.conda_repodata_records().get(platform, [])
+        platform = Platform.current()
+        conda_solved = env.conda_repodata_records().get(str(platform), [])
         pypi_solved = env.pypi_packages().get(platform, [])
+
+        editable = [f"{pkg.name}" for pkg in pypi_solved if pkg.is_editable]
+        log.warning(
+            f"Cannot install editable packages {editable} from checkpoint. "
+            "Please install manually."
+        )
 
         records = asyncio.run(
             solve(
                 channels=channels,
-                specs=[f"{pkg.name} {pkg.version}" for pkg in pypi_solved],
+                specs=[f"{pkg.name}=={pkg.version}" for pkg in pypi_solved if not pkg.is_editable],
                 locked_packages=conda_solved,
             )
         )
