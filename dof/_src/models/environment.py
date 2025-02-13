@@ -42,34 +42,6 @@ class EnvironmentSpec(BaseModel):
     packages: list[package.Package]
     env_vars: dict[str, str] | None = None
 
-class LockedPackage(BaseModel):
-    data: Any
-
-class LockedEnvironment(BaseModel):
-    platform: dict[str, LockedPackage]
-
-class Lock(BaseModel):
-    environments: dict[str, LockedEnvironment]
-
-class LockedPlatform(BaseModel):
-    arch: str
-    kind: str
-
-    @classmethod
-    def from_platform(cls, platform: Platform) -> LockedPlatform:
-        if platform.is_linux:
-            kind = 'linux'
-        elif platform.is_osx:
-            kind = 'osx'
-        elif platform.is_unix:
-            kind = 'unix'
-        elif platform.is_windows:
-            kind = 'windows'
-
-        return cls(
-            arch=str(platform.arch),
-            kind=kind
-        )
 
 class Dofspec(BaseModel):
     spec: str

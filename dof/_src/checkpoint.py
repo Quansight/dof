@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-from collections import defaultdict
+import tempfile
 
-import yaml
 from conda.core.prefix_data import PrefixData
-from rattler import Platform, install, LockFile
+from rattler import LockFile, Platform, install, solve
 
 from dof._src.data.local import LocalData
 from dof._src.models import environment, package
@@ -89,14 +88,25 @@ class Checkpoint:
         return self.env_checkpoint.environment.packages
 
     def install(self) -> None:
-        lock = yaml.safe_load(self.env_checkpoint.dofspec.lock)
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+            f.write(self.env_checkpoint.dofspec.lock)
 
-        records = []
-        breakpoint()
-        for env_name, env in lock.environments():
-            for platform, packages in env.packages_by_platform():
-                print(packages)
-        records = []
+        lock = LockFile.from_path(f.name)
+
+        env = lock.default_environment()
+        channels = [ch._channel.as_str() for ch in env.channels()]
+        platform = str(Platform.current())
+
+        conda_solved = env.conda_repodata_records().get(platform, [])
+        pypi_solved = env.pypi_packages().get(platform, [])
+
+        records = asyncio.run(
+            solve(
+                channels=channels,
+                specs=[f"{pkg.name} {pkg.version}" for pkg in pypi_solved],
+                locked_packages=conda_solved,
+            )
+        )
         asyncio.run(
             install(
                 records=records,

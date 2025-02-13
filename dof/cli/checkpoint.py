@@ -82,14 +82,13 @@ def list(
 @checkpoint_command.command()
 def install(
     _ctx: typer.Context,
-    uuid: str | None = typer.Option(
+    rev: str = typer.Option(
         help="uuid of the revision to install"
     ),
 ) -> None:
     """Install a previous revision of the environment."""
     prefix = os.environ.get("CONDA_PREFIX")
-    if uuid:
-        Checkpoint.from_uuid(prefix, uuid).install()
+    Checkpoint.from_uuid(prefix, rev).install()
 
 
 @checkpoint_command.command()
