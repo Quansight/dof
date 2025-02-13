@@ -26,7 +26,18 @@ class Checkpoint():
             else:
                 channels.add(prefix_record.channel.name)
                 packages.append(
-                    package.UrlCondaPackage(url=prefix_record.url)
+                    package.CondaPackage(
+                        name=prefix_record.name,
+                        version=prefix_record.version,
+                        build=prefix_record.build,
+                        build_number=prefix_record.build_number,
+                        subdir=prefix_record.subdir,
+                        conda_channel=prefix_record.channel.url(),
+                        # TODO
+                        arch="",
+                        platform="",
+                        url=prefix_record.url
+                    )
                 )
 
         env_metadata = environment.EnvironmentMetadata(
@@ -72,8 +83,12 @@ class Checkpoint():
         target_packages = target_checkpoint.environment.packages
         current_packages = self.env_checkpoint.environment.packages
 
-        packages_in_current_not_in_target = [item for item in current_packages if item not in target_packages]
-        packages_in_target_not_in_current = [item for item in target_packages if item not in current_packages]
+        # BIG HACK: this only works because CondaPackages and PipPackages both have url fields
+        target_package_urls = [pkg.url for pkg in target_packages]
+        current_package_urls = [pkg.url for pkg in current_packages]
+        packages_in_current_not_in_target = [item for item in current_packages if item.url not in target_package_urls]
+        packages_in_target_not_in_current = [item for item in target_packages if item.url not in current_package_urls]
+
         return packages_in_current_not_in_target, packages_in_target_not_in_current
 
     def list_packages(self):

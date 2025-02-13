@@ -10,6 +10,7 @@ from dof._src.models.package import UrlCondaPackage
 from dof._src.utils import hash_string
 
 
+# TODO: don't use this
 def lock_environment(path: str, target_platform: str | None = None) -> EnvironmentSpec:
     lock_spec =  _parse_environment_file(path)
 
