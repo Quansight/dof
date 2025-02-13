@@ -1,22 +1,42 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 /// Simple program to greet a person
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(version, about, long_about = None)]
-struct Args {
-    /// Name of the person to greet
-    #[arg(short, long)]
-    name: String,
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
 
-    /// Number of times to greet
-    #[arg(short, long, default_value_t = 1)]
-    count: u8,
+#[derive(Subcommand)]
+enum Commands {
+    #[command(about = "Pull a checkpoint for a remote repo", long_about = None)]
+    Pull {
+        // target to push to
+        target: String,
+    },
+    #[command(about = "Push a checkpoint to a remote repo", long_about = None)]
+    Push {
+        #[arg(short, long)]
+        target: String,
+
+        #[arg(short, long)]
+        rev: String,
+    },
 }
 
 fn main() {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
-    for _ in 0..args.count {
-        println!("Hello {}!", args.name);
+    match &cli.command {
+        Some(Commands::Pull { target }) => {
+            println!("'pull' was used, target is: {:?}", target)
+        }
+        Some(Commands::Push { target, rev }) => {
+            println!("'push' was used, target is: {:?}, rev is {:?}", target, rev)
+        }
+        None => {
+            println!("idk");
+        }
     }
 }
