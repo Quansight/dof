@@ -1,6 +1,7 @@
-from typing import Dict, Union, Optional
-from rattler import RepoDataRecord, PackageRecord
+from typing import Dict, Optional, Union
+
 from pydantic import BaseModel
+from rattler import PackageRecord, RepoDataRecord
 
 
 class CondaPackage(BaseModel):
@@ -28,11 +29,11 @@ class CondaPackage(BaseModel):
             channel=self.conda_channel,
             url=self.url
         )
-        
+
 
     def __str__(self):
         return f"conda: {self.name} - {self.version}"
-    
+
     def __eq__(self, other):
         if isinstance(other, CondaPackage):
             return self.url == other.url
@@ -45,17 +46,16 @@ class PipPackage(BaseModel):
     build: str
     url: Optional[str] = None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"pip: {self.name} - {self.version}"
-    
+
     def __eq__(self, other):
         if isinstance(other, PipPackage):
             return self.name == other.name and self.version == other.version and self.build == other.build
         return False
-    
-    def to_repodata_record(self):
-        """Converts a url package into a rattler compatible repodata record."""
-        # no-op
+
+    def to_repodata_record(self) -> RepoDataRecord:
+        """Convert a url package into a rattler compatible repodata record."""
         pass
 
 

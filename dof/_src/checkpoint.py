@@ -1,19 +1,18 @@
-from typing import List, Dict
-import datetime
 import asyncio
+import datetime
 
 from conda.core.prefix_data import PrefixData
 from rattler import Platform
 from rattler import install as rattler_install
 
-from dof._src.models import package, environment
-from dof._src.utils import hash_string
 from dof._src.data.local import LocalData
+from dof._src.models import environment, package
+from dof._src.utils import hash_string
 
 
-class Checkpoint():
+class Checkpoint:
     @classmethod
-    def from_prefix(cls, prefix: str, uuid: str, tags: List[str] = []):
+    def from_prefix(cls, prefix: str, uuid: str, tags: list[str] = []):
         packages = []
         channels = set()
         for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
@@ -67,14 +66,14 @@ class Checkpoint():
         return cls(env_checkpoint=env_checkpoint, prefix=prefix)
 
     @classmethod
-    def from_checkpoint_dict(cls, checkpoint_data: Dict, prefix: str):
+    def from_checkpoint_dict(cls, checkpoint_data: dict, prefix: str):
         env_checkpoint = environment.EnvironmentCheckpoint.model_validate(checkpoint_data)
         return cls(env_checkpoint=env_checkpoint, prefix=prefix)
-    
+
     def __init__(self, env_checkpoint: environment.EnvironmentCheckpoint, prefix: str):
         self.env_checkpoint = env_checkpoint
         self.prefix = prefix
-        # TODO: this can be swapped out for a different data 
+        # TODO: this can be swapped out for a different data
         # dir type, eg to support remote data dirs
         self.data_dir = LocalData()
 
@@ -94,8 +93,11 @@ class Checkpoint():
     def list_packages(self):
         return self.env_checkpoint.environment.packages
 
-    async def install_with_rattler(self):
+    def install_with_rattler(self):
+        breakpoint()
         # WARNING: DOES NOT WORK FOR PIP OR IF YOU HAVE PIP PACKAGES IN YOUR ENV
         repodata_records = [pkg.to_repodata_record() for pkg in self.env_checkpoint.environment.packages]
         repodata_records = [pkg for pkg in repodata_records if pkg is not None]
-        await rattler_install(repodata_records, target_prefix=self.prefix)
+        asyncio.run(
+            rattler_install(repodata_records, target_prefix=self.prefix)
+        )

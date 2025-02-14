@@ -1,34 +1,32 @@
 import os
-import typer
-from typing import List
-import asyncio
 
-from rich.table import Table
 import rich
+import typer
+from rich.table import Table
 
 from dof._src.checkpoint import Checkpoint
 from dof._src.data.local import LocalData
 from dof._src.utils import short_uuid
-
 
 checkpoint_command = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
     rich_markup_mode="rich",
     context_settings={"help_option_names": ["-h", "--help"]},
+    pretty_exceptions_enable=False,
 )
 
 
 @checkpoint_command.command()
 def save(
     ctx: typer.Context,
-    tags: List[str] = typer.Option(
+    tags: list[str] = typer.Option(
         None,
         help="tags for the checkpoint"
     ),
 ):
     """Create a lockfile for the current env and set a checkpoint.
-    
+
     Assumes that the user is currently in a conda environment
     """
     prefix = os.environ.get("CONDA_PREFIX")
@@ -76,25 +74,16 @@ def list(
 
 @checkpoint_command.command()
 def install(
-    ctx: typer.Context,
+    _ctx: typer.Context,
     rev: str = typer.Option(
         help="uuid of the revision to install"
     ),
-):
-    """Install a previous revision of the environment"""
+) -> None:
+    """Install a previous revision of the environment."""
     prefix = os.environ.get("CONDA_PREFIX")
-    env_uuid = short_uuid()
-    chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
-    packages_in_current_not_in_target, packages_in_target_not_in_current = chck.diff(rev)
+    chck = Checkpoint.from_prefix(prefix=prefix, uuid=rev)
+    chck.install_with_rattler()
 
-    print("packages to delete")
-    for pkg in packages_in_current_not_in_target:
-        print(f"- {pkg}")
-    print("\npackages to install")
-    for pkg in packages_in_target_not_in_current:
-        print(f"+ {pkg}")
-
-    print("Opps, I actually don't know how to install. Skipping for now!")
 
 
 @checkpoint_command.command()
