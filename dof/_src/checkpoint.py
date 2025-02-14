@@ -94,8 +94,8 @@ class Checkpoint():
     def list_packages(self):
         return self.env_checkpoint.environment.packages
 
-    async def install(self):
-        # WARNING: DOES NOT WORK FOR PIP
+    async def install_with_rattler(self):
+        # WARNING: DOES NOT WORK FOR PIP OR IF YOU HAVE PIP PACKAGES IN YOUR ENV
         repodata_records = [pkg.to_repodata_record() for pkg in self.env_checkpoint.environment.packages]
         repodata_records = [pkg for pkg in repodata_records if pkg is not None]
         await rattler_install(repodata_records, target_prefix=self.prefix)

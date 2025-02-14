@@ -94,7 +94,7 @@ def install(
     for pkg in packages_in_target_not_in_current:
         print(f"+ {pkg}")
 
-    asyncio.run(chck.install())
+    print("Opps, I actually don't know how to install. Skipping for now!")
 
 
 @checkpoint_command.command()
