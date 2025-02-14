@@ -56,3 +56,12 @@ yarn-debug.log*
 yarn-error.log*
 
 *.lockb
+
+# pixi environments
+.pixi
+*.egg-info
+
+
+# Added by cargo
+
+/target
