@@ -1,8 +1,10 @@
 from typing import List, Dict
 import datetime
+import asyncio
 
 from conda.core.prefix_data import PrefixData
 from rattler import Platform
+from rattler import install as rattler_install
 
 from dof._src.models import package, environment
 from dof._src.utils import hash_string
@@ -26,7 +28,19 @@ class Checkpoint():
             else:
                 channels.add(prefix_record.channel.name)
                 packages.append(
-                    package.UrlPackage(url=prefix_record.url)
+                    package.CondaPackage(
+                        name=prefix_record.name,
+                        version=prefix_record.version,
+                        build=prefix_record.build,
+                        build_number=prefix_record.build_number,
+                        subdir=prefix_record.subdir,
+                        conda_channel=prefix_record.channel.url(),
+                        # TODO
+                        arch="",
+                        # not sure here
+                        platform="linux-64",
+                        url=prefix_record.url
+                    )
                 )
 
         env_metadata = environment.EnvironmentMetadata(
@@ -74,7 +88,14 @@ class Checkpoint():
 
         packages_in_current_not_in_target = [item for item in current_packages if item not in target_packages]
         packages_in_target_not_in_current = [item for item in target_packages if item not in current_packages]
+
         return packages_in_current_not_in_target, packages_in_target_not_in_current
 
     def list_packages(self):
         return self.env_checkpoint.environment.packages
+
+    async def install_with_rattler(self):
+        # WARNING: DOES NOT WORK FOR PIP OR IF YOU HAVE PIP PACKAGES IN YOUR ENV
+        repodata_records = [pkg.to_repodata_record() for pkg in self.env_checkpoint.environment.packages]
+        repodata_records = [pkg for pkg in repodata_records if pkg is not None]
+        await rattler_install(repodata_records, target_prefix=self.prefix)

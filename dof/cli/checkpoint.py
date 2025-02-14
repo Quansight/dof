@@ -1,10 +1,11 @@
 import os
 import typer
 from typing import List
+import asyncio
+
 from rich.table import Table
 import rich
 
-from dof._src.models.environment import EnvironmentCheckpoint
 from dof._src.checkpoint import Checkpoint
 from dof._src.data.local import LocalData
 from dof._src.utils import short_uuid
@@ -81,7 +82,19 @@ def install(
     ),
 ):
     """Install a previous revision of the environment"""
-    print("not installing")
+    prefix = os.environ.get("CONDA_PREFIX")
+    env_uuid = short_uuid()
+    chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
+    packages_in_current_not_in_target, packages_in_target_not_in_current = chck.diff(rev)
+
+    print("packages to delete")
+    for pkg in packages_in_current_not_in_target:
+        print(f"- {pkg}")
+    print("\npackages to install")
+    for pkg in packages_in_target_not_in_current:
+        print(f"+ {pkg}")
+
+    print("Opps, I actually don't know how to install. Skipping for now!")
 
 
 @checkpoint_command.command()

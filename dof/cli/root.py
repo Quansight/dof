@@ -97,6 +97,5 @@ def pull(
     checkpoint_dict = yaml.load(checkpoint_data, yaml.FullLoader)
 
     prefix = os.environ.get("CONDA_PREFIX")
-    # import pdb; pdb.set_trace()
     chck = Checkpoint.from_checkpoint_dict(checkpoint_data=checkpoint_dict, prefix=prefix)
     chck.save()
