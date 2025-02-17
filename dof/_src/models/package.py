@@ -59,14 +59,14 @@ class PipPackage(BaseModel):
         pass
 
 
-class UrlCondaPackage(BaseModel):
+class UrlPackage(BaseModel):
     url: str
 
     def __str__(self):
         package = self.url.split("/")[-1]
         version = package.split("-")[-2]
         name = "-".join(package.split("-")[:-2])
-        return f"conda: {name} - {version}"
+        return f"url: {name} - {version}"
 
 
-Package = Union[CondaPackage, PipPackage, UrlCondaPackage]
+Package = Union[CondaPackage, PipPackage, UrlPackage]
