@@ -20,7 +20,7 @@ dependencies = [
     "pydantic >=2.0",
     "pyyaml",
     "rich",
-    "setuptools<70",
+    "setuptools",
     "typer",
 ]
 

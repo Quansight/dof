@@ -1,7 +1,6 @@
 import yaml
 import os
 import typer
-from typing import List
 from typing_extensions import Annotated
 
 from dof._src.lock import lock_environment
