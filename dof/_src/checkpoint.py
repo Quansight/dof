@@ -1,6 +1,5 @@
 from typing import List, Dict
 import datetime
-import asyncio
 
 from conda.core.prefix_data import PrefixData
 from rattler import Platform

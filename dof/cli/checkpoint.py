@@ -1,7 +1,6 @@
 import os
 import typer
 from typing import List
-import asyncio
 
 from rich.table import Table
 import rich

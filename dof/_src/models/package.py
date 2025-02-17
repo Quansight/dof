@@ -1,4 +1,4 @@
-from typing import Dict, Union, Optional
+from typing import Union, Optional
 from rattler import RepoDataRecord, PackageRecord
 from pydantic import BaseModel
 
