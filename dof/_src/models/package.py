@@ -29,6 +29,9 @@ class CondaPackage(BaseModel):
             url=self.url
         )
         
+    def manager(self) -> str:
+        """Returns the package manager for this package."""
+        return "conda" 
 
     def __str__(self):
         return f"conda: {self.name} - {self.version}"
@@ -45,6 +48,10 @@ class PipPackage(BaseModel):
     build: str
     url: Optional[str] = None
 
+    def manager(self) -> str:
+        """Returns the package manager for this package."""
+        return "pip" 
+    
     def __str__(self):
         return f"pip: {self.name} - {self.version}"
     
@@ -61,6 +68,10 @@ class PipPackage(BaseModel):
 
 class UrlPackage(BaseModel):
     url: str
+
+    def manager(self) -> str:
+        """Returns the package manager for this package."""
+        return "None" 
 
     def __str__(self):
         package = self.url.split("/")[-1]
