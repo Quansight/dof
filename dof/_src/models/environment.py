@@ -36,17 +36,7 @@ class EnvironmentSpec(BaseModel):
     def to_conda_lock_file(self) -> str:
         channels = [{"url": chn} for chn in self.metadata.channels]
         packages = [
-            conda_lock.CondaLockPackage(
-                category = "main",
-                name = pkg.name,
-                version = pkg.version,
-                dependencies = {},
-                hash = {},
-                manager = pkg.manager(),
-                optional = False,
-                platform = self.metadata.platform,
-                url = pkg.url,
-            )
+            pkg.to_conda_lock_package(self.metadata.platform)
             for pkg in self.packages
         ]
         return conda_lock.CondaLockFile(

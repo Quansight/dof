@@ -2,6 +2,7 @@ from typing import Union, Optional
 from rattler import RepoDataRecord, PackageRecord
 from pydantic import BaseModel
 
+from dof._src.models import conda_lock
 
 class CondaPackage(BaseModel):
     name: str
@@ -17,6 +18,14 @@ class CondaPackage(BaseModel):
     sha256: Optional[str] = None
     md5: Optional[str] = None
 
+    def __str__(self):
+        return f"conda: {self.name} - {self.version}"
+    
+    def __eq__(self, other):
+        if isinstance(other, CondaPackage):
+            return self.url == other.url
+        return False
+
     def to_repodata_record(self):
         """Converts a url package into a rattler compatible repodata record."""
         pkg_record = PackageRecord(
@@ -30,18 +39,22 @@ class CondaPackage(BaseModel):
             channel=self.conda_channel,
             url=self.url
         )
-        
-    def manager(self) -> str:
-        """Returns the package manager for this package."""
-        return "conda" 
-
-    def __str__(self):
-        return f"conda: {self.name} - {self.version}"
     
-    def __eq__(self, other):
-        if isinstance(other, CondaPackage):
-            return self.url == other.url
-        return False
+    def to_conda_lock_package(self, platform):
+        return conda_lock.CondaLockPackage(
+            category = "main",
+            name = self.name,
+            version = self.version,
+            dependencies = {},
+            hash = {
+                "sha256": self.sha256,
+                "md5": self.md5,
+            },
+            manager = "conda",
+            optional = False,
+            platform = platform,
+            url = self.url,
+        )
 
 
 class PipPackage(BaseModel):
@@ -49,10 +62,6 @@ class PipPackage(BaseModel):
     version: str
     build: str
     url: Optional[str] = None
-
-    def manager(self) -> str:
-        """Returns the package manager for this package."""
-        return "pip" 
     
     def __str__(self):
         return f"pip: {self.name} - {self.version}"
@@ -67,6 +76,18 @@ class PipPackage(BaseModel):
         # no-op
         pass
 
+    def to_conda_lock_package(self, platform):
+        return conda_lock.CondaLockPackage(
+            category = "main",
+            name = self.name,
+            version = self.version,
+            manager = "pip",
+            optional = False,
+            platform = platform,
+            dependencies = {},
+            hash = {},
+            url = self.url,
+        )
 
 class UrlPackage(BaseModel):
     url: str
