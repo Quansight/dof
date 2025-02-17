@@ -14,6 +14,8 @@ class CondaPackage(BaseModel):
     arch: str
     platform: str
     url: str
+    sha256: Optional[str] = None
+    md5: Optional[str] = None
 
     def to_repodata_record(self):
         """Converts a url package into a rattler compatible repodata record."""
