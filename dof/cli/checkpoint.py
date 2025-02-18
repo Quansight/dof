@@ -1,5 +1,6 @@
 import os
 import typer
+import yaml
 from typing import List
 
 from rich.table import Table
@@ -127,3 +128,28 @@ def show(
     chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
     for pkg in chck.list_packages():
         print(pkg)
+
+
+@checkpoint_command.command()
+def export(
+    ctx: typer.Context,
+    rev: str = typer.Option(
+        help="uuid of the revision to list packages for"
+    ),
+    conda: bool = typer.Option(
+        False, help="export as a conda environment lock file"
+    ),
+    pixi: bool = typer.Option(
+        False, help="export as a pixi environment lock file"
+    ),
+):
+    """Export a checkpoint as a conda or pixi environment lock file"""
+    prefix = os.environ.get("CONDA_PREFIX")
+    chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
+    if conda:
+        conda_lock_repr = chck.env_checkpoint.environment.to_conda_lock_file()
+        conda_lock_yaml = yaml.dump(conda_lock_repr.model_dump())
+        with open("./conda-lock.yml", "w") as f:
+            f.write(conda_lock_yaml)
+    if pixi:
+        print(chck.env_checkpoint.environment.to_pixi_lock_file())

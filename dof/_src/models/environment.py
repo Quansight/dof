@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 
 from dof._src.models import package
+from dof._src.models import conda_lock
 
 
 class CondaEnvironmentSpec(BaseModel):
@@ -31,6 +32,26 @@ class EnvironmentSpec(BaseModel):
     metadata: EnvironmentMetadata
     packages: List[package.Package]
     env_vars: Optional[Dict[str, str]] = None
+
+    def to_conda_lock_file(self) -> str:
+        channels = [{"url": chn} for chn in self.metadata.channels]
+        packages = [
+            pkg.to_conda_lock_package(self.metadata.platform)
+            for pkg in self.packages
+        ]
+        return conda_lock.CondaLockFile(
+            metadata = conda_lock.CondaLockMetadata(
+                channels = channels,
+                platforms = [self.metadata.platform],
+                sources = ["prefixdata"],
+                content_hash = {}
+            ),
+            package = packages,
+            version = 1,
+        )
+    
+    def to_pixi_lock_file(self) -> str:
+        return "pixi lockfile"
 
 
 class EnvironmentCheckpoint(BaseModel):

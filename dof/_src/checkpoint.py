@@ -34,6 +34,8 @@ class Checkpoint():
                         build_number=prefix_record.build_number,
                         subdir=prefix_record.subdir,
                         conda_channel=prefix_record.channel.url(),
+                        sha256=prefix_record.sha256,
+                        md5=prefix_record.md5,
                         # TODO
                         arch="",
                         # not sure here
