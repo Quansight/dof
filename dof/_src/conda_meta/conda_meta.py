@@ -3,6 +3,8 @@
 # based setup. For the purpose of exploring this approach we 
 # won't set that up here.
 
+import os
+
 from dof._src.conda_meta.conda import CondaCondaMeta
 from dof._src.conda_meta.pixi import PixiCondaMeta
 
@@ -20,6 +22,12 @@ class CondaMeta():
             The path to the environment
         """
         self.prefix = prefix
+
+        if not os.path.exists(prefix):
+            raise Exception(f"prefix {prefix} does not exist")
+
+        if not os.path.exists(f"{prefix}/conda-meta"):
+            raise Exception(f"invalid environment at {prefix}, conda-meta dir does not exist")
 
         # detect which conda-meta flavour is used by the environment
         for impl in [CondaCondaMeta, PixiCondaMeta]:
@@ -47,4 +55,4 @@ class CondaMeta():
         specs: list[str]
             A list of all the specs a user requested to be installed.
         """
-        return []
+        return self.conda_meta.get_requested_specs()
