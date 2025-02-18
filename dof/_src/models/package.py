@@ -14,6 +14,10 @@ class CondaPackage(BaseModel):
     arch: str
     platform: str
     url: str
+    # the string representation of the matchspec that the user
+    # used to request the package. If this was not a package
+    # the user explicitly added, this will be none.
+    user_requested_spec: Optional[str] = None
 
     def to_repodata_record(self):
         """Converts a url package into a rattler compatible repodata record."""
@@ -28,7 +32,6 @@ class CondaPackage(BaseModel):
             channel=self.conda_channel,
             url=self.url
         )
-        
 
     def __str__(self):
         return f"conda: {self.name} - {self.version}"
@@ -59,6 +62,7 @@ class PipPackage(BaseModel):
         pass
 
 
+# TODO: probably remove?
 class UrlCondaPackage(BaseModel):
     url: str
 

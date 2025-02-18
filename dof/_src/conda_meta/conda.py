@@ -21,11 +21,24 @@ class CondaCondaMeta:
         self.history = History(prefix)
 
     def get_requested_specs(self) -> list[str]:
-        """Return a list of all the specs a user requested to be installed.
+        """Return a list of all the MatchSpecs a user requested to be installed
+
         Returns
         -------
         specs: list[str]
-            A list of all the specs a user requested to be installed.
+            A list of all the MatchSpecs a user requested to be installed
         """
         requested_specs = self.history.get_requested_specs_map()
-        return [spec.dist_str() for spec in requested_specs.values()]
+        return [spec.spec for spec in requested_specs.values()]
+    
+    def get_requested_specs_map(self) -> dict[str, str]:
+        """Return a dict of all the package name to MatchSpecs user requested
+          specs to be installed.
+
+        Returns
+        -------
+        specs: dict[str, str]
+            A list of all the package names to MatchSpecs a user requested to be installed
+        """
+        requested_specs = self.history.get_requested_specs_map()
+        return {k: v.spec for k,v in requested_specs.items()}

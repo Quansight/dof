@@ -8,6 +8,7 @@ from rattler import install as rattler_install
 from dof._src.models import package, environment
 from dof._src.utils import hash_string
 from dof._src.data.local import LocalData
+from dof._src.conda_meta.conda_meta import CondaMeta
 
 
 class Checkpoint():
@@ -15,6 +16,9 @@ class Checkpoint():
     def from_prefix(cls, prefix: str, uuid: str, tags: List[str] = []):
         packages = []
         channels = set()
+        meta = CondaMeta(prefix=prefix)
+        user_requested_specs_map = meta.get_requested_specs_map()
+
         for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
             if prefix_record.subdir == "pypi":
                 packages.append(
@@ -36,9 +40,9 @@ class Checkpoint():
                         conda_channel=prefix_record.channel.url(),
                         # TODO
                         arch="",
-                        # not sure here
-                        platform="linux-64",
-                        url=prefix_record.url
+                        platform=prefix_record.channel.platform,
+                        url=prefix_record.url,
+                        user_requested_spec=user_requested_specs_map.get(prefix_record.name, None)
                     )
                 )
 

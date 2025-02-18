@@ -25,3 +25,15 @@ class PixiCondaMeta:
             A list of all the specs a user requested to be installed.
         """
         return []
+    
+    # TODO
+    def get_requested_specs_map(self) -> dict[str, str]:
+        """Return a dict of all the package name to MatchSpecs user requested
+          specs to be installed.
+
+        Returns
+        -------
+        specs: dict[str, str]
+            A list of all the package names to MatchSpecs a user requested to be installed
+        """
+        return {}

@@ -55,15 +55,22 @@ def user_specs(
     ),
 ):
     """Demo command: output the list of user requested specs for a revision"""
+    prefix = os.environ.get("CONDA_PREFIX")
     if rev is None:
-        prefix = os.environ.get("CONDA_PREFIX")
         meta = CondaMeta(prefix=prefix)
         specs = meta.get_requested_specs()
         print("the user requested specs in this environment are:")
-        for spec in specs:
+        # sort alphabetically for readability
+        for spec in sorted(specs):
             print(f"  {spec}")
     else:
-        print("I don't know how to do this yet")
+        chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
+        pkgs = chck.list_packages()
+        print(f"the user requested specs rev {rev}:")
+        # sort alphabetically for readability
+        for spec in sorted(pkgs, key=lambda p: p.name):
+            if spec.user_requested_spec is not None:
+                print(f"  {spec.user_requested_spec}")
 
 
 @app.command()

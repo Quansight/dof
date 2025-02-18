@@ -40,7 +40,7 @@ class CondaMeta():
             raise Exception("Could not detect conda or pixi based conda meta")
 
     def get_requested_specs(self) -> list[str]:
-        """Return a list of all the specs a user requested to be installed.
+        """Return a list of all the MatchSpecs a user requested to be installed.
 
         A user_requested_spec is one that the user explicitly asked to be 
         installed. These are different from dependency_specs which are specs
@@ -53,6 +53,17 @@ class CondaMeta():
         Returns
         -------
         specs: list[str]
-            A list of all the specs a user requested to be installed.
+            A list of all the MatchSpecs a user requested to be installed
         """
         return self.conda_meta.get_requested_specs()
+    
+    def get_requested_specs_map(self) -> dict[str, str]:
+        """Return a dict of all the package name to MatchSpecs user requested
+          specs to be installed.
+
+        Returns
+        -------
+        specs: dict[str, str]
+            A list of all the package names to MatchSpecs a user requested to be installed
+        """
+        return self.conda_meta.get_requested_specs_map()
