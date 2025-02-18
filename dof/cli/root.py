@@ -78,9 +78,6 @@ def pull(
         "--target", "-t",
         help="namespace/environment:tag to push to"
     )],
-    rev: str = typer.Option(
-        help="uuid of the revision to push"
-    ),
 
 ):
     """Push a checkpoint to a target"""
@@ -93,8 +90,7 @@ def pull(
     tag = env_tag.split(":")[1]
 
     checkpoint_data = api.pull(namespace, environment, tag)
-    checkpoint_dict = yaml.load(checkpoint_data, yaml.FullLoader)
 
     prefix = os.environ.get("CONDA_PREFIX")
-    chck = Checkpoint.from_checkpoint_dict(checkpoint_data=checkpoint_dict, prefix=prefix)
+    chck = Checkpoint.from_checkpoint_dict(checkpoint_data=checkpoint_data, prefix=prefix)
     chck.save()
