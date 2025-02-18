@@ -3,6 +3,10 @@
 # based setup. For the purpose of exploring this approach we 
 # won't set that up here.
 
+from dof._src.conda_meta.conda import CondaCondaMeta
+from dof._src.conda_meta.pixi import PixiCondaMeta
+
+
 class CondaMeta():
     def __init__(self, prefix):
         """CondaMeta provides a way of interacting with the
@@ -16,6 +20,16 @@ class CondaMeta():
             The path to the environment
         """
         self.prefix = prefix
+
+        # detect which conda-meta flavour is used by the environment
+        for impl in [CondaCondaMeta, PixiCondaMeta]:
+            self.conda_meta = impl.detect(prefix)
+            if self.conda_meta is not None:
+                break
+
+        # if none is detected raise an exception
+        if self.conda_meta is None:
+            raise Exception("Could not detect conda or pixi based conda meta")
 
     def get_requested_specs(self) -> list[str]:
         """Return a list of all the specs a user requested to be installed.
