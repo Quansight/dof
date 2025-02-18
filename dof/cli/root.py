@@ -55,10 +55,15 @@ def user_specs(
     ),
 ):
     """Demo command: output the list of user requested specs for a revision"""
-    prefix = os.environ.get("CONDA_PREFIX")
-    meta = CondaMeta(prefix=prefix)
-    specs = meta.get_requested_specs()
-    print(specs)
+    if rev is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+        meta = CondaMeta(prefix=prefix)
+        specs = meta.get_requested_specs()
+        print("the user requested specs in this environment are:")
+        for spec in specs:
+            print(f"  {spec}")
+    else:
+        print("I don't know how to do this yet")
 
 
 @app.command()

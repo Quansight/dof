@@ -1,4 +1,6 @@
+import os
 from conda.core import envs_manager
+from conda.history import History
 
 class CondaCondaMeta:
     @classmethod
@@ -13,6 +15,10 @@ class CondaCondaMeta:
 
     def __init__(self, prefix):
         self.prefix = prefix
+        history_file = f"{prefix}/conda-meta/history"
+        if not os.path.exists(history_file):
+            raise Exception(f"history file for prefix '{prefix}' does not exist")
+        self.history = History(prefix)
 
     def get_requested_specs(self) -> list[str]:
         """Return a list of all the specs a user requested to be installed.
@@ -21,4 +27,5 @@ class CondaCondaMeta:
         specs: list[str]
             A list of all the specs a user requested to be installed.
         """
-        return []
+        requested_specs = self.history.get_requested_specs_map()
+        return [spec.dist_str() for spec in requested_specs.values()]
