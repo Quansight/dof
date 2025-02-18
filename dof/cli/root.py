@@ -25,6 +25,7 @@ app.add_typer(
 )
 
 
+# TODO: Delete
 @app.command()
 def lock(
     env_file: str = typer.Option(
