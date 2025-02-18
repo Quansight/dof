@@ -7,6 +7,7 @@ from dof._src.lock import lock_environment
 from dof._src.checkpoint import Checkpoint
 from dof._src.park.park import Park
 from dof.cli.checkpoint import checkpoint_command
+from dof._src.conda_meta.conda_meta import CondaMeta
 
 
 app = typer.Typer(
@@ -43,6 +44,20 @@ def lock(
     else:
         with open(output, "w+") as env_file:
             yaml.dump(solved_env.model_dump(), env_file)
+
+
+@app.command()
+def user_specs(
+    rev: str = typer.Option(
+        None,
+        help="uuid of the revision to inspect for user_specs"
+    ),
+):
+    """Demo command: output the list of user requested specs for a revision"""
+    prefix = os.environ.get("CONDA_PREFIX")
+    meta = CondaMeta(prefix=prefix)
+    specs = meta.get_requested_specs()
+    print(specs)
 
 
 @app.command()

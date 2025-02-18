@@ -33,4 +33,4 @@ class CondaMeta():
         specs: list[str]
             A list of all the specs a user requested to be installed.
         """
-        return 
+        return []
