@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyValueError;
 use pyo3::types::PyList;
 use std::path::Path;
 use pyo3::prelude::*;
@@ -19,40 +20,51 @@ use rattler_lock::LockedPackage;
 //   _package: PyLockedPackage  // <-- Must have .is_pypi = True for this to work
 
 #[pyfunction]
-fn install_pypi<'py>(py: Python<'py>, prefix: String, packages: &Bound<'py, PyList>) -> PyResult<()> {
+#[pyo3(signature = (packages, prefix = None))]
+fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Option<String>) -> PyResult<()> {
     let py_locked_packages: Vec<Bound<'py, PyAny>> = packages
         .iter()
         .map(|pkg| pkg.getattr("_package"))
-        .collect::<PyResult<Vec<_>>>()?;
+        .collect::<PyResult<Vec<Bound<'py, PyAny>>>>()?;
 
-    println!("Prefix: {}", prefix);
+    let target_prefix = prefix
+        .or_else(|| std::env::var("CONDA_PREFIX").ok())
+        .ok_or_else(|| PyErr::new::<PyValueError, _>(
+            "No prefix specified and no CONDA_PREFIX found in the environment. \
+            Cannot continue."
+        ))?;
+
+
+    println!("Prefix: {}", target_prefix);
     println!("Packages: {:?}", py_locked_packages);
 
     Ok(())
 }
 
-fn _install_pypi(prefix: &Path, packages: Vec<LockedPackage>) -> i32 {
-
-    let pkgs: Vec<&str> = packages.iter().map(|pkg| pkg.name()).collect();
-    0
-}
-
-fn install_lockfile<'py>(py: Python<'py>, prefix: String, py_lockfile: &Bound<'py, PyAny>) -> PyResult<()> {
-    let py_env: Bound<'py, PyAny> = py_lockfile.call_method0("default_environment")?;
+#[pyfunction]
+#[pyo3(signature = (lockfile, prefix = None))]
+fn install_lockfile<'py>(py: Python<'py>, lockfile: &Bound<'py, PyAny>, prefix: Option<String>) -> PyResult<()> {
+    let py_env: Bound<'py, PyAny> = lockfile.call_method0("default_environment")?;
     let py_platform: Bound<'py, PyAny> = PyListMethods::get_item(
         py_env.call_method0("platforms")?.downcast()?,
         0,
     )?;
+    let py_packages: Bound<'py, PyAny> = py_env.call_method1("packages", (py_platform,))?;
 
-    let packages: Bound<'py, PyAny> = py_env.call_method1("packages", py_platform)?;
-
-    Ok(())
+    install_pypi(py, py_packages.downcast()?, prefix)
 }
+
+fn _install_pypi(prefix: &Path, packages: Vec<LockedPackage>) -> i32 {
+    let pkgs: Vec<&str> = packages.iter().map(|pkg| pkg.name()).collect();
+    0
+}
+
 
 /// A Python module implemented in Rust.
 #[pymodule(name="_dof")]
 fn foo(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(install_pypi, m)?)?;
+    m.add_function(wrap_pyfunction!(install_lockfile, m)?)?;
     Ok(())
 }
 
