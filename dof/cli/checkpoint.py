@@ -1,6 +1,7 @@
 import os
 import typer
 from typing import List
+import asyncio
 
 from rich.table import Table
 import rich
@@ -116,6 +117,8 @@ def install(
     chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
     packages_in_current_not_in_target, packages_in_target_not_in_current = chck.diff(rev)
 
+    print("!!!WARNING!!! This probably won't work if you have pip packages installed in your target prefix")
+
     print("packages to delete")
     for pkg in packages_in_current_not_in_target:
         print(f"- {pkg}")
@@ -123,7 +126,7 @@ def install(
     for pkg in packages_in_target_not_in_current:
         print(f"+ {pkg}")
 
-    print("Opps, I actually don't know how to install. Skipping for now!")
+    asyncio.run(chck.install())
 
 
 @checkpoint_command.command()
