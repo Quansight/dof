@@ -53,9 +53,16 @@ def delete(
     rev: str = typer.Option(
         help="uuid of the revision to delete"
     ),
+     prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Delete a previous revision of the environment"""
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
     data = LocalData()
     data.delete_environment_checkpoint(prefix=prefix, uuid=rev)
 
@@ -95,9 +102,16 @@ def install(
     rev: str = typer.Option(
         help="uuid of the revision to install"
     ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Install a previous revision of the environment"""
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
     env_uuid = short_uuid()
     chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
     packages_in_current_not_in_target, packages_in_target_not_in_current = chck.diff(rev)
@@ -118,9 +132,16 @@ def diff(
     rev: str = typer.Option(
         help="uuid of the revision to diff against"
     ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Generate a diff of the current environment to the specified revision"""
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
     env_uuid = short_uuid()
     chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
     packages_in_current_not_in_target, packages_in_target_not_in_current = chck.diff(rev)
@@ -137,9 +158,16 @@ def show(
     rev: str = typer.Option(
         help="uuid of the revision to list packages for"
     ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Generate a list packages in an environment revision"""
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
     chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
     for pkg in chck.list_packages():
         print(pkg)
