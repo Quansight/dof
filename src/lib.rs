@@ -1,23 +1,48 @@
+use std::path::PathBuf;
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyList;
-use std::path::Path;
 use pyo3::prelude::*;
 use rattler_lock::LockedPackage;
 
+use uv_cache::Cache;
+use uv_python::{Interpreter, PythonEnvironment};
+use uv_installer::{Preparer, SitePackages, UninstallError};
 
-// In python:
-//
-// LockFile:
-//   list[Environment]
-//
-// Environment:
-//   packages() -> list[LockedPackage]
-//
-// LockedPackage:
-//   _package: PyLockedPackage
-//
-// PyLockedPackage(LockedPackage):
-//   _package: PyLockedPackage  // <-- Must have .is_pypi = True for this to work
+
+async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<(), _> {
+    // Get the uv cache
+
+    let uv_cache_dir = dirs::cache_dir()
+        .ok_or("Couldn't find uv cache directory")?
+        .join("uv-cache");
+
+    if !uv_cache_dir.exists() {
+        fs_err::create_dir_all(&uv_cache_dir)
+            .map_err(|_| "Failed to create uv cache directory.")?;
+    }
+
+    let uv_cache = Cache::from_path(uv_cache_dir);
+
+    // Get the python interpreter for the prefix
+    let python_location = prefix.join("bin/python");
+    let interpreter = Interpreter::query(&python_location, &uv_cache)?;
+
+
+    let venv = PythonEnvironment::from_interpreter(interpreter);
+    let _lock = venv.lock().await?;
+
+    // Find out what packages are already installed
+    let site_packages = SitePackages::from_environment(&venv)
+        .expect("could not create site-packages");
+
+
+
+    // Lock the installation directory in the prefix
+
+    //
+    Ok(())
+}
+
 
 #[pyfunction]
 #[pyo3(signature = (packages, prefix = None))]
@@ -34,11 +59,26 @@ fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Op
             Cannot continue."
         ))?;
 
+    let py_pypi_locked_packages: Vec<&Bound<'py, PyAny>> = py_locked_packages
+        .iter()
+        .filter(|pkg| {
+            pkg
+                .getattr("is_pypi")
+                .and_then(|attr| attr.extract())
+                .unwrap_or(false)
+        })
+        .collect();
 
     println!("Prefix: {}", target_prefix);
     println!("Packages: {:?}", py_locked_packages);
+    println!("PyPI packages: {:?}", py_pypi_locked_packages);
 
-    Ok(())
+    _install_pypi(prefix, packages);
+
+    // let result = _install_pypi(prefix, packages).or_else(|_| PyErr::new::<PyValueError, _>(
+    //     "Error install pypi packages; cannot continue."
+    // ));
+    result
 }
 
 #[pyfunction]
@@ -53,12 +93,6 @@ fn install_lockfile<'py>(py: Python<'py>, lockfile: &Bound<'py, PyAny>, prefix: 
 
     install_pypi(py, py_packages.downcast()?, prefix)
 }
-
-fn _install_pypi(prefix: &Path, packages: Vec<LockedPackage>) -> i32 {
-    let pkgs: Vec<&str> = packages.iter().map(|pkg| pkg.name()).collect();
-    0
-}
-
 
 /// A Python module implemented in Rust.
 #[pymodule(name="_dof")]
