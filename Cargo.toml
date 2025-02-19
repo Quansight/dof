@@ -9,12 +9,28 @@ name = "_dof"
 crate-type = ["cdylib"]
 
 [dependencies]
-uv-python = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
 uv-cache = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-client = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-configuration = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-dispatch = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-distribution = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-distribution-types = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-install-wheel = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
 uv-installer = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-normalize = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-platform-tags = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-python = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-resolver = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-types = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+
 rattler_lock = "0.22.42"
+rattler_conda_types = { version = "0.30.2", default-features = false, features = [
+  "rayon",
+] }
+
 dirs = "6.0.0"
 fs-err = "3.1.0"
+indicatif = "0.17.11"
 
 [dependencies.pyo3]
 version = "0.23.1"
