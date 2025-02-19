@@ -1,8 +1,9 @@
 from typing import List, Dict
 import datetime
+import os
 
 from conda.core.prefix_data import PrefixData
-from rattler import Platform
+from rattler import Platform, PrefixRecord
 from rattler import install as rattler_install
 
 from dof._src.models import package, environment
@@ -97,4 +98,25 @@ class Checkpoint():
         # WARNING: DOES NOT WORK FOR PIP OR IF YOU HAVE PIP PACKAGES IN YOUR ENV
         repodata_records = [pkg.to_repodata_record() for pkg in self.env_checkpoint.environment.packages]
         repodata_records = [pkg for pkg in repodata_records if pkg is not None]
-        await rattler_install(repodata_records, target_prefix=self.prefix)
+
+        prefix_records = []
+        meta_path = f"{self.prefix}/conda-meta"
+        if os.path.exists(meta_path):
+            for file in os.listdir(meta_path):
+                # files ending in .json are probably prefix records
+                if file.endswith(".json"):
+                    try:
+                        prefix_record = PrefixRecord.from_path(os.path.join(meta_path, file))
+                        prefix_records.append(prefix_record)
+                    except:
+                        # TODO: probably not a prefix record if it can't be parsed
+                        pass
+        else:
+            prefix_records = None
+
+        await rattler_install(
+            repodata_records,
+            target_prefix=self.prefix,
+            installed_packages=prefix_records,
+            execute_link_scripts=True
+        )

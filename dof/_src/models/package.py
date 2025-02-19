@@ -15,8 +15,16 @@ class CondaPackage(BaseModel):
     platform: str
     url: str
 
+    def __str__(self):
+        return f"conda: {self.name} - {self.version}"
+    
+    def __eq__(self, other):
+        if isinstance(other, CondaPackage):
+            return self.url == other.url
+        return False
+
     def to_repodata_record(self):
-        """Converts a url package into a rattler compatible repodata record."""
+        """Converts a conda package into a rattler compatible repodata record."""
         pkg_record = PackageRecord(
              name=self.name, version=self.version, build=self.build,
              build_number=self.build_number, subdir=self.subdir, arch=None,
@@ -30,15 +38,6 @@ class CondaPackage(BaseModel):
         )
         
 
-    def __str__(self):
-        return f"conda: {self.name} - {self.version}"
-    
-    def __eq__(self, other):
-        if isinstance(other, CondaPackage):
-            return self.url == other.url
-        return False
-
-
 class PipPackage(BaseModel):
     name: str
     version: str
@@ -47,14 +46,14 @@ class PipPackage(BaseModel):
 
     def __str__(self):
         return f"pip: {self.name} - {self.version}"
-    
+
     def __eq__(self, other):
         if isinstance(other, PipPackage):
             return self.name == other.name and self.version == other.version and self.build == other.build
         return False
     
     def to_repodata_record(self):
-        """Converts a url package into a rattler compatible repodata record."""
+        """Converts a pip package into a rattler compatible repodata record."""
         # no-op
         pass
 
