@@ -25,12 +25,20 @@ def save(
         None,
         help="tags for the checkpoint"
     ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
-    """Create a lockfile for the current env and set a checkpoint.
+    """Create a checkpoint for the current state of an environemnt.
     
-    Assumes that the user is currently in a conda environment
+    If no prefix is specified, assumes the current conda environment.
     """
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+    
     env_uuid = short_uuid()
     if tags is None:
         tags = [env_uuid]
@@ -55,10 +63,18 @@ def delete(
 @checkpoint_command.command()
 def list(
     ctx: typer.Context,
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """List all checkpoints for the current environment"""
     data = LocalData()
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+    
     checkpoints = data.get_environment_checkpoints(prefix=prefix)
     checkpoints.sort(key=lambda x: x.timestamp, reverse=True)
 

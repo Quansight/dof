@@ -2,9 +2,10 @@ from pathlib import Path
 from typing import List
 import os
 import yaml
+import base64
 
 from dof._src.models import environment
-from dof._src.utils import get_name_from_prefix, ensure_dir
+from dof._src.utils import ensure_dir
 
 def default_data_dir() -> Path:
     dof_dir = os.environ.get("DOF_DIR", None)
@@ -24,7 +25,10 @@ class LocalData:
         ensure_dir(self.data_dir)
 
     def _get_env_dir(self, prefix: str):
-        name = get_name_from_prefix(prefix=prefix)
+        # Not stoked on this approach. But provides a mapping
+        # between a prefix path and folder in a way that doesn't
+        # get too long and remains unique
+        name = prefix.replace("/", "-")
         return f"{self.data_dir}/{name}"
 
     def delete_environment_checkpoint(self, prefix: str, uuid: str):
