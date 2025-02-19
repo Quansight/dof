@@ -54,7 +54,10 @@ def push(
     rev: str = typer.Option(
         help="uuid of the revision to push"
     ),
-
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Push a checkpoint to a target"""
     park_url = os.environ.get("PARK_URL")
@@ -65,7 +68,11 @@ def push(
     environment = env_tag.split(":")[0]
     tag = env_tag.split(":")[1]
 
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+
     chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
     data = chck.env_checkpoint.model_dump()
 
@@ -78,7 +85,10 @@ def pull(
         "--target", "-t",
         help="namespace/environment:tag to push to"
     )],
-
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Push a checkpoint to a target"""
     park_url = os.environ.get("PARK_URL")
@@ -91,6 +101,10 @@ def pull(
 
     checkpoint_data = api.pull(namespace, environment, tag)
 
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+
     chck = Checkpoint.from_checkpoint_dict(checkpoint_data=checkpoint_data, prefix=prefix)
     chck.save()

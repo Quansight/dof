@@ -1,6 +1,7 @@
 import os
 import typer
 from typing import List
+import asyncio
 
 from rich.table import Table
 import rich
@@ -25,12 +26,20 @@ def save(
         None,
         help="tags for the checkpoint"
     ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
-    """Create a lockfile for the current env and set a checkpoint.
+    """Create a checkpoint for the current state of an environemnt.
     
-    Assumes that the user is currently in a conda environment
+    If no prefix is specified, assumes the current conda environment.
     """
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+    
     env_uuid = short_uuid()
     if tags is None:
         tags = [env_uuid]
@@ -45,9 +54,16 @@ def delete(
     rev: str = typer.Option(
         help="uuid of the revision to delete"
     ),
+     prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Delete a previous revision of the environment"""
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
     data = LocalData()
     data.delete_environment_checkpoint(prefix=prefix, uuid=rev)
 
@@ -55,10 +71,18 @@ def delete(
 @checkpoint_command.command()
 def list(
     ctx: typer.Context,
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """List all checkpoints for the current environment"""
     data = LocalData()
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+    
     checkpoints = data.get_environment_checkpoints(prefix=prefix)
     checkpoints.sort(key=lambda x: x.timestamp, reverse=True)
 
@@ -79,12 +103,21 @@ def install(
     rev: str = typer.Option(
         help="uuid of the revision to install"
     ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Install a previous revision of the environment"""
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
     env_uuid = short_uuid()
     chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
     packages_in_current_not_in_target, packages_in_target_not_in_current = chck.diff(rev)
+
+    print("!!!WARNING!!! This probably won't work if you have pip packages installed in your target prefix")
 
     print("packages to delete")
     for pkg in packages_in_current_not_in_target:
@@ -93,7 +126,7 @@ def install(
     for pkg in packages_in_target_not_in_current:
         print(f"+ {pkg}")
 
-    print("Opps, I actually don't know how to install. Skipping for now!")
+    asyncio.run(chck.install())
 
 
 @checkpoint_command.command()
@@ -102,9 +135,16 @@ def diff(
     rev: str = typer.Option(
         help="uuid of the revision to diff against"
     ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Generate a diff of the current environment to the specified revision"""
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
     env_uuid = short_uuid()
     chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
     packages_in_current_not_in_target, packages_in_target_not_in_current = chck.diff(rev)
@@ -121,9 +161,16 @@ def show(
     rev: str = typer.Option(
         help="uuid of the revision to list packages for"
     ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Generate a list packages in an environment revision"""
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
     chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
     for pkg in chck.list_packages():
         print(pkg)
