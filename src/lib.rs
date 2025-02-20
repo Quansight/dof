@@ -4,13 +4,15 @@ use std::collections::HashMap;
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyList;
 use pyo3::prelude::*;
+use std::error::Error;
 
 use uv_cache::Cache;
 use uv_client::{Connectivity, FlatIndexClient, RegistryClientBuilder};
 use uv_configuration::{ConfigSettings, Constraints, IndexStrategy, PreviewMode, RAYON_INITIALIZE};
 use uv_dispatch::{BuildDispatch, SharedState};
 use uv_distribution::{DistributionDatabase, RegistryWheelIndex};
-use uv_distribution_types::{DependencyMetadata, IndexLocations, Name, Resolution};
+use uv_distribution_types::{DependencyMetadata, IndexLocations, Name, Resolution, IndexUrl, Index};
+use uv_pep508::{InvalidNameError, PackageName, VerbatimUrl, VerbatimUrlError};
 use uv_install_wheel::LinkMode;
 use uv_installer::{Preparer, SitePackages, UninstallError, Installer};
 use uv_normalize::PackageName;
@@ -20,7 +22,7 @@ use uv_types::HashStrategy;
 use uv_platform_tags::Tags;
 
 
-use rattler_conda_types::{Platform, PrefixRecord};
+use rattler_conda_types::{Platform, PrefixRecord, Arch};
 use rattler_lock::{LockedPackage, PypiIndexes, PypiPackageData, PypiPackageEnvironmentData};
 
 fn find_installed_packages(path: &Path) -> Result<Vec<PrefixRecord>, std::io::Error> {
@@ -29,22 +31,108 @@ fn find_installed_packages(path: &Path) -> Result<Vec<PrefixRecord>, std::io::Er
     PrefixRecord::collect_from_prefix(path)
 }
 
+fn get_arch_tags(platform: &Platform) -> Result<uv_platform_tags::Arch, Box<dyn std::error::Error>> {
+    match platform.arch() {
+        None => unreachable!("every platform we support has an arch"),
+        Some(Arch::X86) => Ok(uv_platform_tags::Arch::X86),
+        Some(Arch::X86_64) => Ok(uv_platform_tags::Arch::X86_64),
+        Some(Arch::Aarch64 | Arch::Arm64) => Ok(uv_platform_tags::Arch::Aarch64),
+        Some(Arch::ArmV7l) => Ok(uv_platform_tags::Arch::Armv7L),
+        Some(Arch::Ppc64le) => Ok(uv_platform_tags::Arch::Powerpc64Le),
+        Some(Arch::Ppc64) => Ok(uv_platform_tags::Arch::Powerpc64),
+        Some(Arch::S390X) => Ok(uv_platform_tags::Arch::S390X),
+        Some(unsupported_arch) => {
+            panic!("unsupported arch for pypi packages '{unsupported_arch}'")
+        }
+    }
+}
+
+fn rattler_platform_to_uv_platform(platform: Platform) -> Result<uv_platform_tags::Platform, Box<dyn Error>> {
+    if platform.is_linux() {
+        // Taken from pixi_default_versions
+        let os: uv_platform_tags::Os = uv_platform_tags::Os::Manylinux{major: 2, minor: 28};
+        let arch = get_arch_tags(&platform)?;
+        Ok(uv_platform_tags::Platform::new(os, arch))
+    } else if platform.is_windows() {
+        Err("Unsupported platform".into())
+    } else if platform.is_osx() {
+        Err("Unsupported platform".into())
+    } else {
+        Err("Unsupported platform".into())
+    }
+}
+
+/// Convert locked indexes to IndexLocations
+fn locked_indexes_to_index_locations(
+    indexes: &rattler_lock::PypiIndexes,
+    base_path: &Path,
+) -> Result<IndexLocations, Box<dyn Error>> {
+    // Check if the base path is absolute
+    // Otherwise uv might panic
+    if !base_path.is_absolute() {
+        return Err("Base path is not absolute".into())
+    }
+
+    let index = indexes
+        .indexes
+        .first()
+        .cloned()
+        .map(VerbatimUrl::from_url)
+        .map(IndexUrl::from)
+        .map(Index::from_index_url)
+        .into_iter();
+    let extra_indexes = indexes
+        .indexes
+        .iter()
+        .skip(1)
+        .cloned()
+        .map(VerbatimUrl::from_url)
+        .map(IndexUrl::from)
+        .map(Index::from_extra_index_url);
+    let flat_indexes = indexes
+        .find_links
+        .iter()
+        .map(|url| match url {
+            rattler_lock::FindLinksUrlOrPath::Path(relative) => {
+                VerbatimUrl::from_path(relative, base_path)
+                    .map_err(|_| -> Box<dyn Error> { "Couldn't convert path to flat index location.".into() })
+            }
+            rattler_lock::FindLinksUrlOrPath::Url(url) => Ok(VerbatimUrl::from_url(url.clone())),
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(IndexUrl::from)
+        .map(Index::from_find_links)
+        .collect();
+
+    // we don't have support for an explicit `no_index` field in the `PypiIndexes`
+    // so we only set it if you want to use flat indexes only
+    let indexes: Vec<_> = index.chain(extra_indexes).collect();
+    let flat_index: Vec<_> = flat_indexes;
+    let no_index = indexes.is_empty() && !flat_index.is_empty();
+    Ok(IndexLocations::new(indexes, flat_index, no_index))
+}
 
 
 /// Install the given packages into the prefix.
 ///
 /// If the packages exist in the cache, those will be used. Otherwise, download the requested
 /// versions and install all into the prefix.
-async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<(), _> {
+async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<(), Box<dyn Error>> {
     let pypi_indexes: Option<&PypiIndexes>;
 
-    let tags: Tags = get_pypi_tags(
-        platform,
-        system_requirements,
-        python_record.package_record(),
+    // Hard code this for now, otherwise we depend on a lot of pixi code
+    let tags = Tags::from_env(
+        &rattler_platform_to_uv_platform(Platform::Linux64)?,
+        (3, 12),
+        "cpython",
+        (3, 12),
+        true,
+        false,
     )?;
+
     let index_locations = pypi_indexes
-        .map(|indexes| locked_indexes_to_index_locations(indexes, lock_file_dir))
+        .map(|indexes| locked_indexes_to_index_locations(indexes, prefix.as_path()))
         .unwrap_or_else(|| Ok(IndexLocations::default()))?;
 
 
@@ -207,16 +295,3 @@ fn foo(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(install_lockfile, m)?)?;
     Ok(())
 }
-
-
-// // Construct an update context and perform the actual update.
-// let lock_file_derived_data = UpdateContext::builder(self)
-//     .with_package_cache(package_cache)
-//     .with_no_install(options.no_install)
-//     .with_outdated_environments(outdated)
-//     .with_lock_file(lock_file)
-//     .with_glob_hash_cache(glob_hash_cache)
-//     .finish()
-//     .await?
-//     .update()
-//     .await?;

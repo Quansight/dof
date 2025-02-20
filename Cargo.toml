@@ -17,6 +17,7 @@ uv-distribution = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
 uv-distribution-types = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
 uv-install-wheel = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
 uv-installer = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
+uv-pep508 = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
 uv-normalize = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
 uv-platform-tags = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
 uv-python = { git = "https://github.com/astral-sh/uv", tag = "0.5.29" }
