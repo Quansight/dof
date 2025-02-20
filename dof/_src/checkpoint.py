@@ -1,11 +1,9 @@
 from typing import List, Dict
 import datetime
-import os
 
 from conda.core.prefix_data import PrefixData
-from rattler import Platform, PrefixRecord
+from rattler import Platform
 from rattler import install as rattler_install
-from rattler import solve as rattler_solve
 
 from dof._src.models import package, environment
 from dof._src.utils import hash_string
@@ -17,7 +15,7 @@ class Checkpoint():
     def from_prefix(cls, prefix: str, uuid: str, tags: List[str] = []):
         packages = []
         channels = set()
-        for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
+        for prefix_record in PrefixData(prefix).iter_records_sorted():
             if prefix_record.subdir == "pypi":
                 packages.append(
                     package.PipPackage(
@@ -99,44 +97,8 @@ class Checkpoint():
         # WARNING: DOES NOT WORK FOR PIP OR IF YOU HAVE PIP PACKAGES IN YOUR ENV
         repodata_records = [pkg.to_repodata_record() for pkg in self.env_checkpoint.environment.packages]
         repodata_records = [pkg for pkg in repodata_records if pkg is not None]
-        
-        python_package = [pkg for pkg in repodata_records if pkg.name == "python"]
-        pip = [pkg for pkg in repodata_records if pkg.name == "python"]
-
-        # repodata_records = [pkg for pkg in repodata_records if pkg.name != "wheel" and pkg.name != "pip" and pkg.name != "python"]
-        repodata_records.sort(key=lambda x: str(x.name))
-        # repodata_records.append(python_package[0])
-
-        prefix_records = []
-        meta_path = f"{self.prefix}/conda-meta"
-        if os.path.exists(meta_path):
-            for file in os.listdir(meta_path):
-                # files ending in .json are probably prefix records
-                if file.endswith(".json"):
-                    try:
-                        prefix_record = PrefixRecord.from_path(os.path.join(meta_path, file))
-                        prefix_records.append(prefix_record)
-                    except:
-                        # TODO: probably not a prefix record if it can't be parsed
-                        pass
-        else:
-            prefix_records = None
-
-        # solved_records = await rattler_solve(
-        #     # Channels to use for solving
-        #     channels=["conda-forge"],
-        #     # The specs to solve for
-        #     specs=["python", "pip", "numpy"],
-        # )
-        # solved_np = [pkg for pkg in solved_records if pkg.name == "numpy"][0]
-        # my_np = [pkg for pkg in repodata_records if pkg.name == "numpy"][0]
-
-        # import pdb; pdb.set_trace()
-
         await rattler_install(
             repodata_records,
             target_prefix=self.prefix,
-            installed_packages=prefix_records,
             execute_link_scripts=True,
-            platform=Platform("linux-64"),
         )
