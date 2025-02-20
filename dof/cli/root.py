@@ -53,9 +53,17 @@ def user_specs(
         None,
         help="uuid of the revision to inspect for user_specs"
     ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
 ):
     """Demo command: output the list of user requested specs for a revision"""
-    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+
     if rev is None:
         meta = CondaMeta(prefix=prefix)
         specs = meta.get_requested_specs()
