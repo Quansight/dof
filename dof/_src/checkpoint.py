@@ -5,6 +5,7 @@ import os
 from conda.core.prefix_data import PrefixData
 from rattler import Platform, PrefixRecord
 from rattler import install as rattler_install
+from rattler import solve as rattler_solve
 
 from dof._src.models import package, environment
 from dof._src.utils import hash_string
@@ -98,6 +99,13 @@ class Checkpoint():
         # WARNING: DOES NOT WORK FOR PIP OR IF YOU HAVE PIP PACKAGES IN YOUR ENV
         repodata_records = [pkg.to_repodata_record() for pkg in self.env_checkpoint.environment.packages]
         repodata_records = [pkg for pkg in repodata_records if pkg is not None]
+        
+        python_package = [pkg for pkg in repodata_records if pkg.name == "python"]
+        pip = [pkg for pkg in repodata_records if pkg.name == "python"]
+
+        # repodata_records = [pkg for pkg in repodata_records if pkg.name != "wheel" and pkg.name != "pip" and pkg.name != "python"]
+        repodata_records.sort(key=lambda x: str(x.name))
+        # repodata_records.append(python_package[0])
 
         prefix_records = []
         meta_path = f"{self.prefix}/conda-meta"
@@ -114,9 +122,21 @@ class Checkpoint():
         else:
             prefix_records = None
 
+        # solved_records = await rattler_solve(
+        #     # Channels to use for solving
+        #     channels=["conda-forge"],
+        #     # The specs to solve for
+        #     specs=["python", "pip", "numpy"],
+        # )
+        # solved_np = [pkg for pkg in solved_records if pkg.name == "numpy"][0]
+        # my_np = [pkg for pkg in repodata_records if pkg.name == "numpy"][0]
+
+        # import pdb; pdb.set_trace()
+
         await rattler_install(
             repodata_records,
             target_prefix=self.prefix,
             installed_packages=prefix_records,
-            execute_link_scripts=True
+            execute_link_scripts=True,
+            platform=Platform("linux-64"),
         )
