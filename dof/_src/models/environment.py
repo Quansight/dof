@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from dof._src.models import package
 
 
+# TODO: delete this
 class CondaEnvironmentSpec(BaseModel):
     """Input conda environment.yaml spec"""
     name: Optional[str]

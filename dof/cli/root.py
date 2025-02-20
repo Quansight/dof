@@ -7,6 +7,7 @@ from dof._src.lock import lock_environment
 from dof._src.checkpoint import Checkpoint
 from dof._src.park.park import Park
 from dof.cli.checkpoint import checkpoint_command
+from dof._src.conda_meta.conda_meta import CondaMeta
 
 
 app = typer.Typer(
@@ -24,6 +25,7 @@ app.add_typer(
 )
 
 
+# TODO: Delete
 @app.command()
 def lock(
     env_file: str = typer.Option(
@@ -43,6 +45,40 @@ def lock(
     else:
         with open(output, "w+") as env_file:
             yaml.dump(solved_env.model_dump(), env_file)
+
+
+@app.command()
+def user_specs(
+    rev: str = typer.Option(
+        None,
+        help="uuid of the revision to inspect for user_specs"
+    ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to save"
+    ),
+):
+    """Demo command: output the list of user requested specs for a revision"""
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+
+    if rev is None:
+        meta = CondaMeta(prefix=prefix)
+        specs = meta.get_requested_specs()
+        print("the user requested specs in this environment are:")
+        # sort alphabetically for readability
+        for spec in sorted(specs):
+            print(f"  {spec}")
+    else:
+        chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
+        pkgs = chck.list_packages()
+        print(f"the user requested specs rev {rev}:")
+        # sort alphabetically for readability
+        for spec in sorted(pkgs, key=lambda p: p.name):
+            if spec.user_requested_spec is not None:
+                print(f"  {spec.user_requested_spec}")
 
 
 @app.command()
