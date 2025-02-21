@@ -181,29 +181,9 @@ impl LockedGitUrl {
         locked_url.scheme().starts_with("git+")
     }
 
-    /// Converts this [`LockedGitUrl`] into a [`PinnedGitSpec`].
-    pub fn to_pinned_git_spec(&self) -> miette::Result<PinnedGitSpec> {
-        let git_source = PinnedGitCheckout::from_locked_url(self)?;
-
-        let git_url = GitUrl::try_from(self.0.clone()).into_diagnostic()?;
-
-        // strip git+ from the scheme
-        let git_url = git_url.repository().clone();
-        let stripped_url = git_url
-            .as_str()
-            .strip_prefix("git+")
-            .unwrap_or(git_url.as_str());
-        let stripped_url = Url::parse(stripped_url).unwrap();
-
-        Ok(PinnedGitSpec {
-            git: stripped_url,
-            source: git_source,
-        })
-    }
-
     /// Parses a locked git URL from a string.
-    pub fn parse(url: &str) -> miette::Result<Self> {
-        let url = Url::parse(url).into_diagnostic()?;
+    pub fn parse(url: &str) -> Result<Self, Box<dyn Error>> {
+        let url = Url::parse(url)?;
         Ok(Self(url))
     }
 
@@ -219,17 +199,240 @@ impl From<LockedGitUrl> for Url {
     }
 }
 
-impl TryFrom<LockedGitUrl> for PinnedGitSpec {
-    type Error = miette::Report;
-    fn try_from(value: LockedGitUrl) -> Result<Self, Self::Error> {
-        value.to_pinned_git_spec()
+/// A wrapper around `Url` which represents a "canonical" version of an original URL.
+///
+/// A "canonical" url is only intended for internal comparison purposes. It's to help paper over
+/// mistakes such as depending on `github.com/foo/bar` vs. `github.com/foo/bar.git`.
+///
+/// This is **only** for internal purposes and provides no means to actually read the underlying
+/// string value of the `Url` it contains. This is intentional, because all fetching should still
+/// happen within the context of the original URL.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct CanonicalUrl(Url);
+
+impl CanonicalUrl {
+    pub fn new(url: &Url) -> Self {
+        let mut url = url.clone();
+
+        // If the URL cannot be a base, then it's not a valid URL anyway.
+        if url.cannot_be_a_base() {
+            return Self(url);
+        }
+
+        // If the URL has no host, then it's not a valid URL anyway.
+        if !url.has_host() {
+            return Self(url);
+        }
+
+        // Strip credentials.
+        let _ = url.set_password(None);
+        let _ = url.set_username("");
+
+        // Strip a trailing slash.
+        if url.path().ends_with('/') {
+            url.path_segments_mut()
+                .expect("url should be a base")
+                .pop_if_empty();
+        }
+
+        // For GitHub URLs specifically, just lower-case everything. GitHub
+        // treats both the same, but they hash differently, and we're gonna be
+        // hashing them. This wants a more general solution, and also we're
+        // almost certainly not using the same case conversion rules that GitHub
+        // does. (See issue #84)
+        if url.host_str() == Some("github.com") {
+            url.set_scheme(url.scheme().to_lowercase().as_str())
+                .expect("we should be able to set scheme");
+            let path = url.path().to_lowercase();
+            url.set_path(&path);
+        }
+
+        // Repos can generally be accessed with or without `.git` extension.
+        if let Some((prefix, suffix)) = url.path().rsplit_once('@') {
+            // Ex) `git+https://github.com/pypa/sample-namespace-packages.git@2.0.0`
+            let needs_chopping = std::path::Path::new(prefix)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("git"));
+            if needs_chopping {
+                let prefix = &prefix[..prefix.len() - 4];
+                url.set_path(&format!("{prefix}@{suffix}"));
+            }
+        } else {
+            // Ex) `git+https://github.com/pypa/sample-namespace-packages.git`
+            let needs_chopping = std::path::Path::new(url.path())
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("git"));
+            if needs_chopping {
+                let last = {
+                    let last = url.path_segments().unwrap().next_back().unwrap();
+                    last[..last.len() - 4].to_owned()
+                };
+                url.path_segments_mut().unwrap().pop().push(&last);
+            }
+        }
+
+        Self(url)
+    }
+
+    pub fn parse(url: &str) -> Result<Self, url::ParseError> {
+        Ok(Self::new(&Url::parse(url)?))
     }
 }
 
-impl From<PinnedGitSpec> for LockedGitUrl {
-    fn from(value: PinnedGitSpec) -> Self {
-        value.into_locked_git_url()
+
+/// Like [`CanonicalUrl`], but attempts to represent an underlying source repository, abstracting
+/// away details like the specific commit or branch, or the subdirectory to build within the
+/// repository.
+///
+/// For example, `https://github.com/pypa/package.git#subdirectory=pkg_a` and
+/// `https://github.com/pypa/package.git#subdirectory=pkg_b` would map to different
+/// [`CanonicalUrl`] values, but the same [`RepositoryUrl`], since they map to the same
+/// resource.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+pub struct RepositoryUrl(Url);
+
+impl RepositoryUrl {
+    pub fn new(url: &Url) -> Self {
+        let mut url = CanonicalUrl::new(url).0;
+
+        // If a Git URL ends in a reference (like a branch, tag, or commit), remove it.
+        let mut url = if url.scheme().starts_with("git+") {
+            if let Some(prefix) = url
+                .path()
+                .rsplit_once('@')
+                .map(|(prefix, _suffix)| prefix.to_string())
+            {
+                url.set_path(&prefix);
+            }
+
+            // Remove the `git+` prefix.
+            let url_as_str = &url.as_str()[4..];
+            Url::parse(url_as_str).expect("url should be valid")
+        } else {
+            url
+        };
+
+        // Drop any fragments and query parameters.
+        url.set_fragment(None);
+        url.set_query(None);
+
+        Self(url)
     }
+
+    pub fn parse(url: &str) -> Result<Self, url::ParseError> {
+        Ok(Self::new(&Url::parse(url)?))
+    }
+
+    /// Return the underlying [`Url`] of this repository.
+    pub fn into_url(self) -> Url {
+        self.into()
+    }
+}
+
+impl From<RepositoryUrl> for Url {
+    fn from(url: RepositoryUrl) -> Self {
+        url.0
+    }
+}
+
+/// A pinned version of a git checkout.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
+pub struct PinnedGitCheckout {
+    /// The commit hash of the git checkout.
+    pub commit: uv_git::GitReference,
+    /// The subdirectory of the git checkout.
+    pub subdirectory: Option<String>,
+    /// The reference of the git checkout.
+    pub reference: String,
+}
+
+impl PinnedGitCheckout {
+    /// Creates a new pinned git checkout.
+    pub fn new(commit: uv_git::GitOid, subdirectory: Option<String>, reference: String) -> Self {
+        Self {
+            commit: commit.into(),
+            subdirectory,
+            reference,
+        }
+    }
+
+    /// Extracts a pinned git checkout from the query pairs and the hash
+    /// fragment in the given URL.
+    pub fn from_locked_url(locked_url: &LockedGitUrl) -> Result<PinnedGitCheckout, Box<dyn Error>> {
+        let url = &locked_url.0;
+        let mut reference = None;
+        let mut subdirectory = None;
+
+        for (key, val) in url.query_pairs() {
+            match &*key {
+                "tag" => {
+                    if reference.replace(val.into_owned()).is_some() {
+                        return Err("multiple tags in URL".into());
+                    }
+                }
+                "branch" => {
+                    if reference.replace(val.into_owned()).is_some() {
+                        return Err("multiple branches in URL".into());
+                    }
+                }
+                "rev" => {
+                    if reference.replace(val.into_owned()).is_some() {
+                        return Err("multiple revs in URL".into());
+                    }
+                }
+                // If the URL points to a subdirectory, extract it, as in (git):
+                //   `git+https://git.example.com/MyProject.git@v1.0#subdirectory=pkg_dir`
+                //   `git+https://git.example.com/MyProject.git@v1.0#egg=pkg&subdirectory=pkg_dir`
+                "subdirectory" => {
+                    if subdirectory.replace(val.into_owned()).is_some() {
+                        return Err("multiple subdirectories in URL".into());
+                    }
+                }
+                _ => continue,
+            };
+        }
+
+        // set the default reference if none is provided.
+        if reference.is_none() {
+            reference.replace("".into());
+        }
+
+        let commit = uv_git::GitOid::from_str(
+            url.fragment().ok_or("missing sha".to_string())?
+        )?;
+
+        Ok(PinnedGitCheckout {
+            commit,
+            subdirectory,
+            reference: reference.expect("reference should be set"),
+        })
+    }
+}
+
+
+
+/// Convert a locked git url into a parsed git url
+/// [`LockedGitUrl`] is always recorded in the lock file and looks like this:
+/// <git+https://git.example.com/MyProject.git?tag=v1.0&subdirectory=pkg_dir#1c4b2c7864a60ea169e091901fcde63a8d6fbfdc>
+///
+/// [`uv_pypi_types::ParsedGitUrl`] looks like this:
+/// <git+https://git.example.com/MyProject.git@v1.0#subdirectory=pkg_dir>
+///
+/// So we need to convert the locked git url into a parsed git url.
+/// which is used in the uv crate.
+pub fn to_parsed_git_url(
+    locked_git_url: &LockedGitUrl,
+) -> Result<uv_pypi_types::ParsedGitUrl, Box<dyn Error>> {
+    let git_source = PinnedGitCheckout::from_locked_url(locked_git_url)?;
+    // Construct manually [`ParsedGitUrl`] from locked url.
+    let parsed_git_url = uv_pypi_types::ParsedGitUrl::from_source(
+        RepositoryUrl::new(&locked_git_url.to_url()).into(),
+        uv_git::GitReference::from_rev(git_source.reference.into()),
+        Some(uv_git::GitOid::from_str(git_source.commit)?),
+        git_source.subdirectory.map(|s| PathBuf::from(s.as_str())),
+    );
+
+    Ok(parsed_git_url)
 }
 
 fn need_reinstall(

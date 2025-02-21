@@ -717,6 +717,7 @@ dependencies = [
  "uv-dispatch",
  "uv-distribution",
  "uv-distribution-types",
+ "uv-git",
  "uv-install-wheel",
  "uv-installer",
  "uv-normalize",
