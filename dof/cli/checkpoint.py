@@ -126,7 +126,8 @@ def install(
     for pkg in packages_in_target_not_in_current:
         print(f"+ {pkg}")
 
-    asyncio.run(chck.install())
+    rev_checkpoint = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
+    asyncio.run(rev_checkpoint.install_with_rattler())
 
 
 @checkpoint_command.command()
@@ -159,6 +160,7 @@ def diff(
 def show(
     ctx: typer.Context,
     rev: str = typer.Option(
+        None,
         help="uuid of the revision to list packages for"
     ),
     prefix: str = typer.Option(
@@ -171,6 +173,12 @@ def show(
         prefix = os.environ.get("CONDA_PREFIX")
     else:
         prefix = os.path.abspath(prefix)
-    chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
+
+    if rev is None:
+        env_uuid = short_uuid()
+        chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
+    else:
+        chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
+
     for pkg in chck.list_packages():
         print(pkg)

@@ -1,5 +1,6 @@
 from typing import List, Dict
 import datetime
+import os
 
 from conda.core.prefix_data import PrefixData
 from rattler import Platform
@@ -15,7 +16,7 @@ class Checkpoint():
     def from_prefix(cls, prefix: str, uuid: str, tags: List[str] = []):
         packages = []
         channels = set()
-        for prefix_record in PrefixData(prefix, pip_interop_enabled=True).iter_records_sorted():
+        for prefix_record in PrefixData(prefix).iter_records_sorted():
             if prefix_record.subdir == "pypi":
                 packages.append(
                     package.PipPackage(
@@ -97,4 +98,16 @@ class Checkpoint():
         # WARNING: DOES NOT WORK FOR PIP OR IF YOU HAVE PIP PACKAGES IN YOUR ENV
         repodata_records = [pkg.to_repodata_record() for pkg in self.env_checkpoint.environment.packages]
         repodata_records = [pkg for pkg in repodata_records if pkg is not None]
-        await rattler_install(repodata_records, target_prefix=self.prefix)
+        await rattler_install(
+            repodata_records,
+            target_prefix=self.prefix,
+            execute_link_scripts=True,
+        )
+        # ensure that the history file exists. This let's conda know that it's a real 
+        # environment. If it doesn't exist, create it
+        history_file = f"{self.prefix}/conda-meta/history"
+        if not os.path.isfile(history_file):
+            with open(history_file, "w") as f:
+                f.write("# history file created with dof")
+
+
