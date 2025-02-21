@@ -1,29 +1,606 @@
-use std::sync::LazyLock;
-use std::path::{PathBuf, Path};
-use std::collections::HashMap;
+use std::borrow::Cow;
+use url::Url;
 use pyo3::exceptions::PyValueError;
-use pyo3::types::PyList;
+use std::str::FromStr;
+
 use pyo3::prelude::*;
+use pyo3::types::PyList;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
-
-use uv_cache::Cache;
-use uv_client::{Connectivity, FlatIndexClient, RegistryClientBuilder};
-use uv_configuration::{ConfigSettings, Constraints, IndexStrategy, PreviewMode, RAYON_INITIALIZE};
-use uv_dispatch::{BuildDispatch, SharedState};
-use uv_distribution::{DistributionDatabase, RegistryWheelIndex};
-use uv_distribution_types::{DependencyMetadata, IndexLocations, Name, Resolution, IndexUrl, Index};
-use uv_pep508::{InvalidNameError, PackageName, VerbatimUrl, VerbatimUrlError};
-use uv_install_wheel::LinkMode;
-use uv_installer::{Preparer, SitePackages, UninstallError, Installer};
-use uv_normalize::PackageName;
-use uv_python::{Interpreter, PythonEnvironment};
-use uv_resolver::FlatIndex;
-use uv_types::HashStrategy;
-use uv_platform_tags::Tags;
-
+use std::path::{PathBuf, Path};
+use std::sync::LazyLock;
 
 use rattler_conda_types::{Platform, PrefixRecord, Arch};
-use rattler_lock::{LockedPackage, PypiIndexes, PypiPackageData, PypiPackageEnvironmentData};
+use rattler_lock::{LockedPackage, PypiIndexes, PypiPackageData, UrlOrPath, ConversionError};
+
+use uv_cache::{Cache, ArchiveTarget, ArchiveTimestamp};
+use uv_configuration::{ConfigSettings, RAYON_INITIALIZE};
+use uv_distribution::RegistryWheelIndex;
+use uv_distribution_types::{IndexLocations, IndexUrl, Index, CachedDist, Dist, CachedRegistryDist, InstalledDist, Name};
+use uv_install_wheel::LinkMode;
+use uv_installer::{SitePackages, Installer, Planner};
+use uv_normalize::PackageName;
+use uv_pep508::VerbatimUrl;
+use uv_platform_tags::Tags;
+use uv_python::{Interpreter, PythonEnvironment};
+use uv_types::HashStrategy;
+
+mod rattler_uv_interop;
+
+use crate::rattler_uv_interop::{
+    convert_to_dist,
+    strip_direct_scheme,
+    to_uv_version,
+    check_url_freshness,
+};
+
+#[derive(Debug)]
+pub enum InstallReason {
+    /// Reinstall a package from the local cache, will link from the cache
+    ReinstallCached,
+    /// Reinstall a package that we have determined to be stale, will be taken from the registry
+    ReinstallStaleLocal,
+    /// Reinstall a package that is missing from the local cache, but is available in the registry
+    ReinstallMissing,
+    /// Install a package from the local cache, will link from the cache
+    InstallCached,
+    /// Install a package that we have determined to be stale, will be taken from the registry
+    InstallStaleLocal,
+    /// Install a package that is missing from the local cache, but is available in the registry
+    InstallMissing,
+}
+
+/// This trait can be used to generalize over the different reason why a specific installation source was chosen
+/// So we can differentiate between re-installing and installing a package, this is all a bit verbose
+/// but can be quite useful for debugging and logging
+trait OperationToReason {
+    /// This package is available in the local cache
+    fn cached(&self) -> InstallReason;
+    /// This package is determined to be stale
+    fn stale(&self) -> InstallReason;
+    /// This package is missing from the local cache
+    fn missing(&self) -> InstallReason;
+}
+
+/// Use this struct to get the correct install reason
+struct Install;
+impl OperationToReason for Install {
+    fn cached(&self) -> InstallReason {
+        InstallReason::InstallCached
+    }
+
+    fn stale(&self) -> InstallReason {
+        InstallReason::InstallStaleLocal
+    }
+
+    fn missing(&self) -> InstallReason {
+        InstallReason::InstallMissing
+    }
+}
+
+// /// Use this struct to get the correct reinstall reason
+// struct Reinstall;
+// impl OperationToReason for Reinstall {
+//     fn cached(&self) -> InstallReason {
+//         InstallReason::ReinstallCached
+//     }
+//
+//     fn stale(&self) -> InstallReason {
+//         InstallReason::ReinstallStaleLocal
+//     }
+//
+//     fn missing(&self) -> InstallReason {
+//         InstallReason::ReinstallMissing
+//     }
+// }
+
+/// Provide an iterator over the installed distributions
+/// This trait can also be used to mock the installed distributions for testing purposes
+pub trait InstalledDistProvider<'a> {
+    /// Provide an iterator over the installed distributions
+    fn iter(&'a self) -> impl Iterator<Item = &'a InstalledDist>;
+}
+
+impl<'a> InstalledDistProvider<'a> for SitePackages {
+    fn iter(&'a self) -> impl Iterator<Item = &'a InstalledDist> {
+        self.iter()
+    }
+}
+
+/// Provides a way to get the potentially cached distribution, if it exists
+/// This trait can also be used to mock the cache for testing purposes
+pub trait CachedDistProvider<'a> {
+    /// Get the cached distribution for a package name and version
+    fn get_cached_dist(
+        &mut self,
+        name: &'a uv_normalize::PackageName,
+        version: uv_pep440::Version,
+    ) -> Option<CachedRegistryDist>;
+}
+
+impl<'a> CachedDistProvider<'a> for RegistryWheelIndex<'a> {
+    fn get_cached_dist(
+        &mut self,
+        name: &'a uv_normalize::PackageName,
+        version: uv_pep440::Version,
+    ) -> Option<CachedRegistryDist> {
+        let index = self
+            .get(name)
+            .find(|entry| entry.dist.filename.version == version);
+        index.map(|index| index.dist.clone())
+    }
+}
+
+
+#[derive(Debug)]
+pub struct InstallPlan {
+    /// The distributions that are not already installed in the current
+    /// environment, but are available in the local cache.
+    pub local: Vec<CachedDist>,
+
+    /// The distributions that are not already installed in the current
+    /// environment, and are not available in the local cache.
+    /// this is where we differ from UV because we want already have the URL we
+    /// want to download
+    pub remote: Vec<Dist>,
+
+    /// Any distributions that are already installed in the current environment,
+    /// but will be re-installed (including upgraded) to satisfy the
+    /// requirements.
+    pub reinstalls: Vec<InstalledDist>,
+
+    /// Any distributions that are already installed in the current environment,
+    /// and are _not_ necessary to satisfy the requirements.
+    pub extraneous: Vec<InstalledDist>,
+}
+
+struct InstallPlanner {
+    uv_cache: Cache,
+    lock_file_dir: PathBuf,
+}
+
+enum ValidateCurrentInstall {
+    /// Keep this package
+    Keep,
+    /// Reinstall this package
+    Reinstall,
+}
+
+pub struct LockedGitUrl(Url);
+
+impl LockedGitUrl {
+    /// Creates a new [`LockedGitUrl`] from a [`Url`].
+    pub fn new(url: Url) -> Self {
+        Self(url)
+    }
+
+    /// Returns true if the given URL is a locked git URL.
+    /// This is used to differentiate between a regular Url and a [`LockedGitUrl`]
+    /// that starts with `git+`.
+    pub fn is_locked_git_url(locked_url: &Url) -> bool {
+        locked_url.scheme().starts_with("git+")
+    }
+
+    /// Converts this [`LockedGitUrl`] into a [`PinnedGitSpec`].
+    pub fn to_pinned_git_spec(&self) -> miette::Result<PinnedGitSpec> {
+        let git_source = PinnedGitCheckout::from_locked_url(self)?;
+
+        let git_url = GitUrl::try_from(self.0.clone()).into_diagnostic()?;
+
+        // strip git+ from the scheme
+        let git_url = git_url.repository().clone();
+        let stripped_url = git_url
+            .as_str()
+            .strip_prefix("git+")
+            .unwrap_or(git_url.as_str());
+        let stripped_url = Url::parse(stripped_url).unwrap();
+
+        Ok(PinnedGitSpec {
+            git: stripped_url,
+            source: git_source,
+        })
+    }
+
+    /// Parses a locked git URL from a string.
+    pub fn parse(url: &str) -> miette::Result<Self> {
+        let url = Url::parse(url).into_diagnostic()?;
+        Ok(Self(url))
+    }
+
+    /// Converts this [`LockedGitUrl`] into a [`Url`].
+    pub fn to_url(&self) -> Url {
+        self.0.clone()
+    }
+}
+
+impl From<LockedGitUrl> for Url {
+    fn from(value: LockedGitUrl) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<LockedGitUrl> for PinnedGitSpec {
+    type Error = miette::Report;
+    fn try_from(value: LockedGitUrl) -> Result<Self, Self::Error> {
+        value.to_pinned_git_spec()
+    }
+}
+
+impl From<PinnedGitSpec> for LockedGitUrl {
+    fn from(value: PinnedGitSpec) -> Self {
+        value.into_locked_git_url()
+    }
+}
+
+fn need_reinstall(
+    installed: &InstalledDist,
+    locked: &PypiPackageData,
+    lock_file_dir: &Path,
+) -> Result<ValidateCurrentInstall, Box<dyn Error>> {
+    // Check if the installed version is the same as the required version
+    match installed {
+        InstalledDist::Registry(reg) => {
+            let specifier = to_uv_version(&locked.version)?;
+
+            if reg.version != specifier {
+                return Ok(ValidateCurrentInstall::Reinstall);
+            }
+        }
+
+        // For installed distributions check the direct_url.json to check if a re-install is needed
+        InstalledDist::Url(direct_url) => {
+            let direct_url_json = match InstalledDist::direct_url(&direct_url.path) {
+                Ok(Some(direct_url)) => direct_url,
+                Ok(None) => {
+                    return Ok(ValidateCurrentInstall::Reinstall);
+                }
+                Err(_) => {
+                    return Ok(ValidateCurrentInstall::Reinstall);
+                }
+            };
+
+            match direct_url_json {
+                uv_pypi_types::DirectUrl::LocalDirectory { url, dir_info } => {
+                    // Recreate file url
+                    let result = Url::parse(&url);
+                    match result {
+                        Ok(url) => {
+                            // Convert the locked location, which can be a path or a url, to a url
+                            let locked_url = match &locked.location {
+                                // Fine if it is already a url
+                                UrlOrPath::Url(url) => url.clone(),
+                                // Do some path mangling if it is actually a path to get it into a url
+                                UrlOrPath::Path(path) => {
+                                    let path = PathBuf::from(path.as_str());
+                                    // Because the path we are comparing to is absolute we need to convert
+                                    let path = if path.is_absolute() {
+                                        path
+                                    } else {
+                                        // Relative paths will be relative to the lock file directory
+                                        lock_file_dir.join(path)
+                                    };
+                                    // Okay, now convert to a file path, if we cant do that we need to re-install
+                                    match Url::from_file_path(path.clone()) {
+                                        Ok(url) => url,
+                                        Err(_) => {
+                                            return Ok(ValidateCurrentInstall::Reinstall);
+                                        }
+                                    }
+                                }
+                            };
+
+                            // Check if the urls are different
+                            if url == locked_url {
+                                // Okay so these are the same, but we need to check if the cache is newer
+                                // than the source directory
+                                if !check_url_freshness(&url, installed)? {
+                                    return Ok(ValidateCurrentInstall::Reinstall);
+                                }
+                            } else {
+                                return Ok(ValidateCurrentInstall::Reinstall);
+                            }
+                        }
+                        Err(_) => {
+                            return Ok(ValidateCurrentInstall::Reinstall);
+                        }
+                    }
+                    // If editable status changed also re-install
+                    if dir_info.editable.unwrap_or_default() != locked.editable {
+                        return Ok(ValidateCurrentInstall::Reinstall);
+                    }
+                }
+                uv_pypi_types::DirectUrl::ArchiveUrl {
+                    url,
+                    // Don't think anything ever fills this?
+                    archive_info: _,
+                    // Subdirectory is either in the url or not supported
+                    subdirectory: _,
+                } => {
+                    let locked_url = match &locked.location {
+                        // Remove `direct+` scheme if it is there so we can compare the required to
+                        // the installed url
+                        UrlOrPath::Url(url) => strip_direct_scheme(url),
+                        UrlOrPath::Path(_path) => {
+                            return Ok(ValidateCurrentInstall::Reinstall)
+                        }
+                    };
+
+                    // Try to parse both urls
+                    let installed_url = url.parse::<Url>();
+
+                    // Same here
+                    let installed_url = if let Ok(installed_url) = installed_url {
+                        installed_url
+                    } else {
+                        return Ok(ValidateCurrentInstall::Reinstall);
+                    };
+
+                    if locked_url.as_ref() == &installed_url {
+                        // Check cache freshness
+                        if !check_url_freshness(&locked_url, installed)? {
+                            return Ok(ValidateCurrentInstall::Reinstall);
+                        }
+                    } else {
+                        return Ok(ValidateCurrentInstall::Reinstall);
+                    }
+                }
+                uv_pypi_types::DirectUrl::VcsUrl {
+                    url,
+                    vcs_info,
+                    subdirectory: _,
+                } => {
+                    // Check if the installed git url is the same as the locked git url
+                    // if this fails, it should be an error, because then installed url is not a git url
+                    let installed_git_url =
+                        uv_pypi_types::ParsedGitUrl::try_from(Url::parse(url.as_str())?)?;
+
+                    // Try to parse the locked git url, this can be any url, so this may fail
+                    // in practice it always seems to succeed, even with a non-git url
+                    let locked_git_url = match &locked.location {
+                        UrlOrPath::Url(url) => {
+                            // is it a git url?
+                            if LockedGitUrl::is_locked_git_url(url) {
+                                let locked_git_url = LockedGitUrl::new(url.clone());
+                                to_parsed_git_url(&locked_git_url)
+                            } else {
+                                // it is not a git url, so we fallback to use the url as is
+                                ParsedGitUrl::try_from(url.clone())
+                            }
+                        }
+                        UrlOrPath::Path(_path) => {
+                            // Previously
+                            return Ok(ValidateCurrentInstall::Reinstall);
+                        }
+                    };
+                    match locked_git_url {
+                        Ok(locked_git_url) => {
+                            // Check the repository base url with the locked url
+                            let installed_repository_url =
+                                RepositoryUrl::new(installed_git_url.url.repository());
+                            if locked_git_url.url.repository()
+                                != &installed_repository_url.into_url()
+                            {
+                                // This happens when this is not a git url
+                                return Ok(ValidateCurrentInstall::Reinstall);
+                            }
+                            if vcs_info.requested_revision
+                                != locked_git_url
+                                    .url
+                                    .reference()
+                                    .as_str()
+                                    .map(|s| s.to_string())
+                            {
+                                // The commit id is different, we need to reinstall
+                                return Ok(ValidateCurrentInstall::Reinstall);
+                            }
+                        }
+                        Err(_) => {
+                            return Ok(ValidateCurrentInstall::Reinstall);
+                        }
+                    }
+                }
+            }
+        }
+        // Figure out what to do with these
+        InstalledDist::EggInfoFile(installed_egg) => {
+            tracing::warn!(
+                "egg-info files are not supported yet, skipping: {}",
+                installed_egg.name
+            );
+        }
+        InstalledDist::EggInfoDirectory(installed_egg_dir) => {
+            tracing::warn!(
+                "egg-info directories are not supported yet, skipping: {}",
+                installed_egg_dir.name
+            );
+        }
+        InstalledDist::LegacyEditable(egg_link) => {
+            tracing::warn!(
+                ".egg-link pointers are not supported yet, skipping: {}",
+                egg_link.name
+            );
+        }
+    };
+
+    // Do some extra checks if the version is the same
+    let metadata = match installed.metadata() {
+        Ok(metadata) => metadata,
+        Err(err) => {
+            // Can't be sure lets reinstall
+            return Ok(ValidateCurrentInstall::Reinstall);
+        }
+    };
+
+    if let Some(requires_python) = metadata.requires_python {
+        // If the installed package requires a different requires python version of the locked package,
+        // or if one of them is `Some` and the other is `None`.
+        match &locked.requires_python {
+            Some(locked_requires_python) => {
+                if requires_python.to_string() != locked_requires_python.to_string() {
+                    return Ok(ValidateCurrentInstall::Reinstall);
+                }
+            }
+            None => {
+                return Ok(ValidateCurrentInstall::Reinstall);
+            }
+        }
+    } else if let Some(requires_python) = &locked.requires_python {
+        return Ok(ValidateCurrentInstall::Reinstall);
+    }
+
+    Ok(ValidateCurrentInstall::Keep)
+}
+
+const UV_INSTALLER: &str = "uv-dof";
+
+impl InstallPlanner {
+    pub fn new(uv_cache: Cache, lock_file_dir: impl AsRef<Path>) -> Self {
+        Self {
+            uv_cache,
+            lock_file_dir: lock_file_dir.as_ref().to_path_buf(),
+        }
+    }
+
+    /// Decide if we need to get the distribution from the local cache or the registry
+    /// this method will add the distribution to the local or remote vector,
+    /// depending on whether the version is stale, available locally or not
+    fn decide_installation_source<'a>(
+        &self,
+        name: &'a uv_normalize::PackageName,
+        required_pkg: &PypiPackageData,
+        local: &mut Vec<CachedDist>,
+        remote: &mut Vec<Dist>,
+        dist_cache: &mut impl CachedDistProvider<'a>,
+    ) -> Result<(), Box<dyn Error>> {
+        // Okay so we need to re-install the package
+        // let's see if we need the remote or local version
+
+        // First, check if we need to revalidate the package
+        // then we should get it from the remote
+        if self.uv_cache.must_revalidate(name) {
+            remote.push(convert_to_dist(required_pkg, &self.lock_file_dir)?);
+            return Ok(());
+        }
+        let uv_version = to_uv_version(&required_pkg.version)?;
+        // If it is not stale its either in the registry cache or not
+        let cached = dist_cache.get_cached_dist(name, uv_version);
+        // If we have it in the cache we can use that
+        if let Some(distribution) = cached {
+            local.push(CachedDist::Registry(distribution));
+        // If we don't have it in the cache we need to download it
+        } else {
+            remote.push(convert_to_dist(required_pkg, &self.lock_file_dir)?);
+        }
+        Ok(())
+    }
+
+
+    /// Figure out what we can link from the cache locally
+    /// and what we need to download from the registry.
+    /// Also determine what we need to remove.
+    ///
+    /// All the 'a lifetimes are to to make sure that the names provided to the CachedDistProvider
+    /// are valid for the lifetime of the CachedDistProvider and what is passed to the method
+    pub fn plan<'a, Installed: InstalledDistProvider<'a>, Cached: CachedDistProvider<'a> + 'a>(
+        &self,
+        site_packages: &'a Installed,
+        mut dist_cache: Cached,
+        required_pkgs: &'a HashMap<uv_normalize::PackageName, &PypiPackageData>,
+    ) -> Result<InstallPlan, Box<dyn Error>> {
+        // Packages to be removed
+        let mut extraneous = vec![];
+        // Packages to be installed directly from the cache
+        let mut local = vec![];
+        // Try to install from the registry or direct url or w/e
+        let mut remote = vec![];
+        // Packages that need to be reinstalled
+        // i.e. need to be removed before being installed
+        let mut reinstalls = vec![];
+
+        // Will contain the packages that have been previously installed
+        // and a decision has been made what to do with them
+        let mut prev_installed_packages = HashSet::new();
+
+        // Walk over all installed packages and check if they are required
+        for dist in site_packages.iter() {
+            // Check if we require the package to be installed
+            let pkg = required_pkgs.get(dist.name());
+            // Get the installer name
+            let installer = dist
+                .installer()
+                // Empty string if no installer or any other error
+                .map_or(String::new(), |f| f.unwrap_or_default());
+
+            match pkg {
+                Some(required_pkg) => {
+                    // Add to the list of previously installed packages
+                    prev_installed_packages.insert(dist.name());
+                    // Check if we need this package installed but it is not currently installed by us
+                    if installer != UV_INSTALLER {
+                        // We are managing the package but something else has installed a version
+                        // let's re-install to make sure that we have the **correct** version
+                        reinstalls.push(dist.clone());
+                    } else {
+                        // Check if we need to reinstall
+                        match need_reinstall(dist, required_pkg, &self.lock_file_dir)? {
+                            ValidateCurrentInstall::Keep => {
+                                // No need to reinstall
+                                continue;
+                            }
+                            ValidateCurrentInstall::Reinstall => {
+                                reinstalls.push(dist.clone());
+                            }
+                        }
+                    }
+                    // Okay so we need to re-install the package
+                    // let's see if we need the remote or local version
+                    self.decide_installation_source(
+                        dist.name(),
+                        required_pkg,
+                        &mut local,
+                        &mut remote,
+                        &mut dist_cache,
+                    )?;
+                }
+                // Second case we are not managing the package
+                None if installer != UV_INSTALLER => {
+                    // Ignore packages that we are not managed by us
+                    continue;
+                }
+                // Third case we *are* managing the package but it is no longer required
+                None => {
+                    // Add to the extraneous list
+                    // as we do manage it but have no need for it
+                    extraneous.push(dist.clone());
+                }
+            }
+        }
+
+        // Now we need to check if we have any packages left in the required_map
+        for (name, pkg) in required_pkgs
+            .iter()
+            // Only check the packages that have not been previously installed
+            .filter(|(name, _)| !prev_installed_packages.contains(name))
+        {
+            // Decide if we need to get the distribution from the local cache or the registry
+            self.decide_installation_source(
+                name,
+                pkg,
+                &mut local,
+                &mut remote,
+                &mut dist_cache,
+            )?;
+        }
+
+        Ok(InstallPlan {
+            local,
+            remote,
+            reinstalls,
+            extraneous,
+        })
+    }
+
+}
 
 fn find_installed_packages(path: &Path) -> Result<Vec<PrefixRecord>, std::io::Error> {
     // Initialize rayon explicitly to avoid implicit initialization.
@@ -187,7 +764,7 @@ async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<
             .iter()
             .filter_map(|pkg| pkg.as_pypi())
             .map(|(pkg, _)| {
-                let uv_name = uv_normalize::PackageName::new(pkg.name.to_string())
+                let uv_name = PackageName::new(pkg.name.to_string())
                     .expect("should be correct");
                 (uv_name, pkg)
             })
@@ -200,22 +777,21 @@ async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<
             "Cannot determine installed packages in the given environment."
         ))?;
 
-    let PixiInstallPlan {
+    let InstallPlan {
         local,
         remote,
         reinstalls,
         extraneous,
-    } = InstallPlanner::new(uv_context.cache.clone(), lock_file_dir).plan(
+    } = InstallPlanner::new(uv_cache.clone(), lock_file_dir).plan(
         &site_packages,
         registry_index,
         &required_map,
     )?;
 
-
     // Install the resolved distributions.
     // At this point we have all the wheels we need to install available to link locally
-    let local_dists = local.iter().map(|(d, _)| d.clone());
-    let all_dists = remote_dists
+    let local_dists = local.iter().map(|d| d.clone());
+    let all_dists = remote
         .into_iter()
         .chain(local_dists)
         .collect::<Vec<_>>();
@@ -225,7 +801,7 @@ async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<
         let start = std::time::Instant::now();
         Installer::new(&venv)
             .with_link_mode(LinkMode::default())
-            .with_installer_name(Some("uv-dof".to_string()))
+            .with_installer_name(Some(UV_INSTALLER.to_string()))
             // .with_reporter(UvReporter::new_arc(options))
             .install(all_dists.clone())
             .await
