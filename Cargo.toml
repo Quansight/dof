@@ -41,6 +41,7 @@ url = "2.5.4"
 pep508_rs = "0.9.2"
 miette = "7.5.0"
 tracing = "0.1.41"
+reqwest = "0.12.12"
 
 [dependencies.pyo3]
 version = "0.23.1"

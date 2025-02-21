@@ -1,29 +1,57 @@
-use std::borrow::Cow;
-use url::Url;
-use pyo3::exceptions::PyValueError;
-use std::str::FromStr;
-
-use pyo3::prelude::*;
-use pyo3::types::PyList;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
+use std::fs;
 use std::path::{PathBuf, Path};
+use std::str::FromStr;
+use std::sync::Arc;
 use std::sync::LazyLock;
 
-use rattler_conda_types::{Platform, PrefixRecord, Arch};
-use rattler_lock::{LockedPackage, PypiIndexes, PypiPackageData, UrlOrPath, ConversionError};
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::PyList;
+use reqwest::Client;
+use url::Url;
 
-use uv_cache::{Cache, ArchiveTarget, ArchiveTimestamp};
-use uv_configuration::{ConfigSettings, RAYON_INITIALIZE};
-use uv_distribution::RegistryWheelIndex;
-use uv_distribution_types::{IndexLocations, IndexUrl, Index, CachedDist, Dist, CachedRegistryDist, InstalledDist, Name};
+use rattler_conda_types::{Platform, PrefixRecord, Arch};
+use rattler_lock::{CondaPackageData, LockedPackage, PypiIndexes, PypiPackageData, UrlOrPath};
+
+use uv_cache::Cache;
+use uv_client::{RegistryClient, RegistryClientBuilder, FlatIndexClient, Connectivity};
+use uv_configuration::{
+    ConfigSettings,
+    RAYON_INITIALIZE,
+    BuildOptions,
+    Constraints,
+    Concurrency,
+    KeyringProviderType,
+    SourceStrategy,
+    TrustedHost,
+    IndexStrategy,
+    PreviewMode,
+};
+use uv_distribution::{RegistryWheelIndex, DistributionDatabase};
+use uv_distribution_types::{
+    IndexLocations,
+    IndexUrl,
+    Index,
+    CachedDist,
+    Dist,
+    DependencyMetadata,
+    CachedRegistryDist,
+    InstalledDist,
+    Name,
+    Resolution,
+    IndexCapabilities,
+};
+use uv_dispatch::{SharedState, BuildDispatch};
 use uv_install_wheel::LinkMode;
-use uv_installer::{SitePackages, Installer, Planner};
+use uv_resolver::FlatIndex;
+use uv_installer::{SitePackages, Installer, Preparer, UninstallError};
 use uv_normalize::PackageName;
 use uv_pep508::VerbatimUrl;
 use uv_platform_tags::Tags;
 use uv_python::{Interpreter, PythonEnvironment};
-use uv_types::HashStrategy;
+use uv_types::{HashStrategy, InFlight, BuildIsolation};
 
 mod rattler_uv_interop;
 
@@ -33,66 +61,6 @@ use crate::rattler_uv_interop::{
     to_uv_version,
     check_url_freshness,
 };
-
-#[derive(Debug)]
-pub enum InstallReason {
-    /// Reinstall a package from the local cache, will link from the cache
-    ReinstallCached,
-    /// Reinstall a package that we have determined to be stale, will be taken from the registry
-    ReinstallStaleLocal,
-    /// Reinstall a package that is missing from the local cache, but is available in the registry
-    ReinstallMissing,
-    /// Install a package from the local cache, will link from the cache
-    InstallCached,
-    /// Install a package that we have determined to be stale, will be taken from the registry
-    InstallStaleLocal,
-    /// Install a package that is missing from the local cache, but is available in the registry
-    InstallMissing,
-}
-
-/// This trait can be used to generalize over the different reason why a specific installation source was chosen
-/// So we can differentiate between re-installing and installing a package, this is all a bit verbose
-/// but can be quite useful for debugging and logging
-trait OperationToReason {
-    /// This package is available in the local cache
-    fn cached(&self) -> InstallReason;
-    /// This package is determined to be stale
-    fn stale(&self) -> InstallReason;
-    /// This package is missing from the local cache
-    fn missing(&self) -> InstallReason;
-}
-
-/// Use this struct to get the correct install reason
-struct Install;
-impl OperationToReason for Install {
-    fn cached(&self) -> InstallReason {
-        InstallReason::InstallCached
-    }
-
-    fn stale(&self) -> InstallReason {
-        InstallReason::InstallStaleLocal
-    }
-
-    fn missing(&self) -> InstallReason {
-        InstallReason::InstallMissing
-    }
-}
-
-// /// Use this struct to get the correct reinstall reason
-// struct Reinstall;
-// impl OperationToReason for Reinstall {
-//     fn cached(&self) -> InstallReason {
-//         InstallReason::ReinstallCached
-//     }
-//
-//     fn stale(&self) -> InstallReason {
-//         InstallReason::ReinstallStaleLocal
-//     }
-//
-//     fn missing(&self) -> InstallReason {
-//         InstallReason::ReinstallMissing
-//     }
-// }
 
 /// Provide an iterator over the installed distributions
 /// This trait can also be used to mock the installed distributions for testing purposes
@@ -339,7 +307,7 @@ impl From<RepositoryUrl> for Url {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct PinnedGitCheckout {
     /// The commit hash of the git checkout.
-    pub commit: uv_git::GitReference,
+    pub commit: String,
     /// The subdirectory of the git checkout.
     pub subdirectory: Option<String>,
     /// The reference of the git checkout.
@@ -350,7 +318,7 @@ impl PinnedGitCheckout {
     /// Creates a new pinned git checkout.
     pub fn new(commit: uv_git::GitOid, subdirectory: Option<String>, reference: String) -> Self {
         Self {
-            commit: commit.into(),
+            commit: commit.to_string(),
             subdirectory,
             reference,
         }
@@ -399,7 +367,7 @@ impl PinnedGitCheckout {
 
         let commit = uv_git::GitOid::from_str(
             url.fragment().ok_or("missing sha".to_string())?
-        )?;
+        )?.to_string();
 
         Ok(PinnedGitCheckout {
             commit,
@@ -428,7 +396,7 @@ pub fn to_parsed_git_url(
     let parsed_git_url = uv_pypi_types::ParsedGitUrl::from_source(
         RepositoryUrl::new(&locked_git_url.to_url()).into(),
         uv_git::GitReference::from_rev(git_source.reference.into()),
-        Some(uv_git::GitOid::from_str(git_source.commit)?),
+        Some(uv_git::GitOid::from_str(&git_source.commit)?),
         git_source.subdirectory.map(|s| PathBuf::from(s.as_str())),
     );
 
@@ -567,7 +535,8 @@ fn need_reinstall(
                                 to_parsed_git_url(&locked_git_url)
                             } else {
                                 // it is not a git url, so we fallback to use the url as is
-                                ParsedGitUrl::try_from(url.clone())
+                                uv_pypi_types::ParsedGitUrl::try_from(url.clone())
+                                    .map_err(|_| "Problem parsing git url".into())
                             }
                         }
                         UrlOrPath::Path(_path) => {
@@ -628,7 +597,7 @@ fn need_reinstall(
     // Do some extra checks if the version is the same
     let metadata = match installed.metadata() {
         Ok(metadata) => metadata,
-        Err(err) => {
+        Err(_err) => {
             // Can't be sure lets reinstall
             return Ok(ValidateCurrentInstall::Reinstall);
         }
@@ -647,7 +616,7 @@ fn need_reinstall(
                 return Ok(ValidateCurrentInstall::Reinstall);
             }
         }
-    } else if let Some(requires_python) = &locked.requires_python {
+    } else if let Some(_requires_python) = &locked.requires_python {
         return Ok(ValidateCurrentInstall::Reinstall);
     }
 
@@ -898,9 +867,11 @@ fn locked_indexes_to_index_locations(
 ///
 /// If the packages exist in the cache, those will be used. Otherwise, download the requested
 /// versions and install all into the prefix.
-async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<(), Box<dyn Error>> {
-    let pypi_indexes: Option<&PypiIndexes>;
-
+async fn _install_pypi(
+    prefix: PathBuf,
+    packages: Vec<LockedPackage>,
+    environment_variables: &HashMap<String, String>
+) -> Result<(), Box<dyn Error>> {
     // Hard code this for now, otherwise we depend on a lot of pixi code
     let tags = Tags::from_env(
         &rattler_platform_to_uv_platform(Platform::Linux64)?,
@@ -911,10 +882,9 @@ async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<
         false,
     )?;
 
-    let index_locations = pypi_indexes
-        .map(|indexes| locked_indexes_to_index_locations(indexes, prefix.as_path()))
-        .unwrap_or_else(|| Ok(IndexLocations::default()))?;
-
+    let lockfile_dir = dirs::cache_dir()
+        .ok_or("Couldn't find lockfile directory")?
+        .join("dof-cache");
 
     // Get or create the local uv cache
     let uv_cache_dir = dirs::cache_dir()
@@ -936,14 +906,19 @@ async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<
     );
 
     let venv = PythonEnvironment::from_interpreter(interpreter);
-    let _lock = venv.lock().await?;
 
-    // Find out what packages are already installed
-    let site_packages = SitePackages::from_environment(&venv)
-        .expect("could not create site-packages");
-
+    // uv registry settings
     let config_settings = ConfigSettings::default();
-
+    let client = Client::new();
+    let keyring_provider = KeyringProviderType::Disabled;
+    let pypi_indexes: Option<&PypiIndexes> = None;
+    let index_locations = pypi_indexes
+        .map(|indexes| locked_indexes_to_index_locations(indexes, prefix.as_path()))
+        .unwrap_or_else(|| Ok(IndexLocations::default()))?;
+    let build_options = BuildOptions::new(
+        uv_configuration::NoBinary::default(),
+        uv_configuration::NoBuild::None,
+    );
 
     // This is used to find wheels that are available from the registry
     let registry_index = RegistryWheelIndex::new(
@@ -953,9 +928,66 @@ async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<
         &HashStrategy::None,
         &config_settings,
     );
+    let registry_client = Arc::new(
+        RegistryClientBuilder::new(uv_cache.clone())
+            .client(client.clone())
+            // Allow connectsion to arbitrary insecure servers (e.g. localhost:8000) as registries
+            // .allow_insecure_host(uv_context.allow_insecure_host.clone())
+            .index_urls(index_locations.index_urls())
+            .keyring(keyring_provider)
+            .connectivity(Connectivity::Online)
+            .build(),
+    );
+    // Resolve the flat indexes from `--find-links`.
+    let flat_index = {
+        let client = FlatIndexClient::new(&registry_client, &uv_cache);
+        let indexes = index_locations.flat_indexes().map(|index| index.url());
+        let entries = client.fetch(indexes).await?;
+        FlatIndex::from_entries(
+            entries,
+            Some(&tags),
+            &uv_types::HashStrategy::None,
+            &build_options,
+        )
+    };
+
+
+    let dep_metadata = DependencyMetadata::default();
+    let constraints = Constraints::default();
+
+    let shared_state = SharedState::default();
+    let build_dispatch = BuildDispatch::new(
+        &registry_client,
+        &uv_cache,
+        constraints,
+        venv.interpreter(),
+        &index_locations,
+        &flat_index,
+        &dep_metadata,
+        shared_state,
+        IndexStrategy::default(),
+        &config_settings,
+        BuildIsolation::default(),
+        LinkMode::default(),
+        &build_options,
+        &HashStrategy::None, // This is always set by default in pixi when generating the UvResolutionContext from a workspace
+        None,
+        SourceStrategy::Disabled,
+        Concurrency::default(),
+        PreviewMode::Disabled,
+    )
+    // ! Important this passes any CONDA activation to the uv build process
+    .with_build_extra_env_vars(environment_variables.iter());
+
+
+    let _lock = venv.lock().await?;
+
+    // Find out what packages are already installed
+    let site_packages = SitePackages::from_environment(&venv)
+        .expect("could not create site-packages");
 
     // Warn the user about conda packages that will be filtered out
-    let conda_packages = packages
+    let conda_packages: Vec<&CondaPackageData> = packages
         .iter()
         .filter_map(|pkg| pkg.as_conda())
         .collect();
@@ -985,23 +1017,30 @@ async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<
         remote,
         reinstalls,
         extraneous,
-    } = InstallPlanner::new(uv_cache.clone(), lock_file_dir).plan(
+    } = InstallPlanner::new(uv_cache.clone(), lockfile_dir).plan(
         &site_packages,
         registry_index,
         &required_map,
     )?;
 
+    let remote_dists = acquire_missing_distributions(
+        remote,
+        registry_client,
+        index_locations,
+        &build_dispatch,
+    ).await?;
+
+
     // Install the resolved distributions.
     // At this point we have all the wheels we need to install available to link locally
     let local_dists = local.iter().map(|d| d.clone());
-    let all_dists = remote
+    let all_dists = remote_dists
         .into_iter()
         .chain(local_dists)
         .collect::<Vec<_>>();
 
 
     if !all_dists.is_empty() {
-        let start = std::time::Instant::now();
         Installer::new(&venv)
             .with_link_mode(LinkMode::default())
             .with_installer_name(Some(UV_INSTALLER.to_string()))
@@ -1014,6 +1053,129 @@ async fn _install_pypi(prefix: PathBuf, packages: Vec<LockedPackage>) -> Result<
 
 
     Ok(())
+}
+
+async fn acquire_missing_distributions<'a>(
+    remote: Vec<Dist>,
+    registry_client: Arc<RegistryClient>,
+    index_locations: IndexLocations,
+    build_dispatch: &'a BuildDispatch,
+) -> Result<Vec<CachedDist>, Box<dyn Error>> {
+    // Download, build, and unzip any missing distributions.
+    if remote.is_empty() {
+        Vec::new()
+    } else {
+        let start = std::time::Instant::now();
+
+        // let options = UvReporterOptions::new()
+        //     .with_length(remote.len() as u64)
+        //     .with_starting_tasks(remote.iter().map(|(d, _)| format!("{}", d.name())))
+        //     .with_top_level_message("Preparing distributions");
+
+        let distribution_database = DistributionDatabase::new(
+            registry_client.as_ref(),
+            &build_dispatch,
+            uv_context.concurrency.downloads,
+        );
+
+        // Before hitting the network let's make sure the credentials are available to
+        // uv
+        for url in index_locations.indexes().map(|index| index.url()) {
+            let success = uv_git::store_credentials_from_url(url);
+            tracing::debug!("Stored credentials for {}: {}", url, success);
+        }
+
+        let preparer = Preparer::new(
+            &uv_context.cache,
+            &tags,
+            &uv_types::HashStrategy::None,
+            &build_options,
+            distribution_database,
+        )
+        .with_reporter(UvReporter::new_arc(options));
+
+        let resolution = Resolution::default();
+        let remote_dists = preparer
+            .prepare(
+                remote.iter().map(|(d, _)| d.clone()).collect(),
+                &uv_context.in_flight,
+                &resolution,
+            )
+            .await
+            .into_diagnostic()
+            .context("Failed to prepare distributions")?;
+
+        let s = if remote_dists.len() == 1 { "" } else { "s" };
+        tracing::info!(
+            "{}",
+            format!(
+                "Prepared {} in {}",
+                format!("{} package{}", remote_dists.len(), s),
+                elapsed(start.elapsed())
+            )
+        );
+
+        remote_dists
+    };
+
+    // Remove any unnecessary packages.
+    if !extraneous.is_empty() || !reinstalls.is_empty() {
+        let start = std::time::Instant::now();
+
+        for dist_info in extraneous.iter().chain(reinstalls.iter().map(|(d, _)| d)) {
+            let summary = match uv_installer::uninstall(dist_info).await {
+                Ok(sum) => sum,
+                // Get error types from uv_installer
+                Err(UninstallError::Uninstall(e))
+                    if matches!(e, uv_install_wheel::Error::MissingRecord(_))
+                        || matches!(e, uv_install_wheel::Error::MissingTopLevel(_)) =>
+                {
+                    // If the uninstallation failed, remove the directory manually and continue
+                    tracing::debug!("Uninstall failed for {:?} with error: {}", dist_info, e);
+
+                    // Sanity check to avoid calling remove all on a bad path.
+                    if dist_info
+                        .path()
+                        .iter()
+                        .any(|segment| Path::new(segment) == Path::new("site-packages"))
+                    {
+                        tokio::fs::remove_dir_all(dist_info.path())
+                            .await
+                            .into_diagnostic()?;
+                    }
+
+                    continue;
+                }
+                Err(err) => {
+                    return Err(miette::miette!(err));
+                }
+            };
+            tracing::debug!(
+                "Uninstalled {} ({} file{}, {} director{})",
+                dist_info.name(),
+                summary.file_count,
+                if summary.file_count == 1 { "" } else { "s" },
+                summary.dir_count,
+                if summary.dir_count == 1 { "y" } else { "ies" },
+            );
+        }
+
+        let s = if extraneous.len() + reinstalls.len() == 1 {
+            ""
+        } else {
+            "s"
+        };
+        tracing::debug!(
+            "{}",
+            format!(
+                "Uninstalled {} in {}",
+                format!("{} package{}", extraneous.len() + reinstalls.len(), s),
+                elapsed(start.elapsed())
+            )
+        );
+    }
+
+
 }
 
 
