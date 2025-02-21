@@ -1,5 +1,6 @@
 from typing import List, Dict
 import datetime
+import os
 
 from conda.core.prefix_data import PrefixData
 from rattler import Platform
@@ -102,3 +103,11 @@ class Checkpoint():
             target_prefix=self.prefix,
             execute_link_scripts=True,
         )
+        # ensure that the history file exists. This let's conda know that it's a real 
+        # environment. If it doesn't exist, create it
+        history_file = f"{self.prefix}/conda-meta/history"
+        if not os.path.isfile(history_file):
+            with open(history_file, "w") as f:
+                f.write("# history file created with dof")
+
+
