@@ -1,19 +1,95 @@
+use std::sync::LazyLock;
 use std::borrow::Cow;
-use url::Url;
-use std::str::FromStr;
-
 use std::error::Error;
 use std::path::Path;
+use std::str::FromStr;
 
-use rattler_lock::{PypiPackageData, UrlOrPath};
+use url::Url;
 
+use rattler_lock::{PackageHashes, PypiPackageData, UrlOrPath};
+
+use uv_pypi_types::{VerbatimParsedUrl, ParsedUrl, HashDigest, HashAlgorithm};
 use uv_cache::{ArchiveTarget, ArchiveTimestamp};
-use uv_distribution_types::{IndexUrl, Dist, InstalledDist};
+use uv_distribution_filename::{DistExtension, SourceDistExtension, WheelFilename};
+use uv_distribution_types::{
+    BuiltDist,
+    Dist,
+    IndexUrl,
+    InstalledDist,
+    RegistryBuiltDist,
+    RegistryBuiltWheel,
+    RegistrySourceDist,
+    SourceDist,
+    UrlString,
+};
 use uv_normalize::PackageName;
 
-use crate::git::{
-    LockedGitUrl
+use crate::gitutil::{
+    LockedGitUrl,
+    to_parsed_git_url,
 };
+
+pub static DEFAULT_PYPI_INDEX_URL: LazyLock<Url> =
+    LazyLock::new(|| Url::parse("https://pypi.org/simple").unwrap());
+
+
+/// Converts `pep440_rs::VersionSpecifiers` to `uv_pep440::VersionSpecifiers`
+pub fn to_uv_version_specifiers(
+    version_specifier: &pep440_rs::VersionSpecifiers,
+) -> Result<uv_pep440::VersionSpecifiers, Box<dyn Error>> {
+    Ok(uv_pep440::VersionSpecifiers::from_str(&version_specifier.to_string())?)
+}
+
+/// Converts our locked data to a file
+pub fn locked_data_to_file(
+    url: &Url,
+    hash: Option<&PackageHashes>,
+    filename: &str,
+    requires_python: Option<pep440_rs::VersionSpecifiers>,
+) -> Result<uv_distribution_types::File, Box<dyn Error>> {
+    let url = uv_distribution_types::FileLocation::AbsoluteUrl(UrlString::from(url.clone()));
+
+    // Convert PackageHashes to uv hashes
+    let hashes = if let Some(hash) = hash {
+        match hash {
+            rattler_lock::PackageHashes::Md5(md5) => vec![HashDigest {
+                algorithm: HashAlgorithm::Md5,
+                digest: format!("{:x}", md5).into(),
+            }],
+            rattler_lock::PackageHashes::Sha256(sha256) => vec![HashDigest {
+                algorithm: HashAlgorithm::Sha256,
+                digest: format!("{:x}", sha256).into(),
+            }],
+            rattler_lock::PackageHashes::Md5Sha256(md5, sha256) => vec![
+                HashDigest {
+                    algorithm: HashAlgorithm::Md5,
+                    digest: format!("{:x}", md5).into(),
+                },
+                HashDigest {
+                    algorithm: HashAlgorithm::Sha256,
+                    digest: format!("{:x}", sha256).into(),
+                },
+            ],
+        }
+    } else {
+        vec![]
+    };
+
+    let uv_requires_python = requires_python
+        .map(|inside| to_uv_version_specifiers(&inside))
+        .transpose()?;
+
+    Ok(uv_distribution_types::File {
+        filename: filename.to_string(),
+        dist_info_metadata: false,
+        hashes,
+        requires_python: uv_requires_python,
+        upload_time_utc_ms: None,
+        yanked: None,
+        size: None,
+        url,
+    })
+}
 
 /// Converts `pe508::PackageName` to  `uv_normalize::PackageName`
 pub fn to_uv_normalize(
@@ -86,12 +162,7 @@ pub fn convert_to_dist(
 
             if LockedGitUrl::is_locked_git_url(&url_without_direct) {
                 let locked_git_url = LockedGitUrl::new(url_without_direct.clone().into_owned());
-                let parsed_git_url = to_parsed_git_url(&locked_git_url).map_err(|err| {
-                    ConvertToUvDistError::LockedUrl(
-                        err.to_string(),
-                        locked_git_url.to_url().to_string(),
-                    )
-                })?;
+                let parsed_git_url = to_parsed_git_url(&locked_git_url)?;
 
                 Dist::from_url(
                     pkg_name,
@@ -147,7 +218,7 @@ pub fn convert_to_dist(
                         // out but it would require adding the indexes to
                         // the lock file
                         index: IndexUrl::Pypi(uv_pep508::VerbatimUrl::from_url(
-                            consts::DEFAULT_PYPI_INDEX_URL.clone(),
+                            DEFAULT_PYPI_INDEX_URL.clone(),
                         )),
                     }],
                     best_wheel_index: 0,
@@ -162,13 +233,11 @@ pub fn convert_to_dist(
                     file: Box::new(file),
                     // This should be fine because currently it is only used for caching
                     index: IndexUrl::Pypi(uv_pep508::VerbatimUrl::from_url(
-                        consts::DEFAULT_PYPI_INDEX_URL.clone(),
+                        DEFAULT_PYPI_INDEX_URL.clone(),
                     )),
                     // I don't think this really matters for the install
                     wheels: vec![],
-                    ext: SourceDistExtension::from_path(Path::new(filename_raw)).map_err(|e| {
-                        ConvertToUvDistError::Extension(e, filename_raw.to_string())
-                    })?,
+                    ext: SourceDistExtension::from_path(Path::new(filename_raw))?,
                 }))
             }
         }
@@ -190,9 +259,7 @@ pub fn convert_to_dist(
                     pkg_name,
                     absolute_url,
                     &abs_path,
-                    DistExtension::from_path(&abs_path).map_err(|e| {
-                        ConvertToUvDistError::Extension(e, abs_path.to_string_lossy().to_string())
-                    })?,
+                    DistExtension::from_path(&abs_path)?,
                 )?
             }
         }
