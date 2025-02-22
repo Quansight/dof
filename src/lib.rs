@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::fs;
+use std::ptr;
 use std::path::{PathBuf, Path};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -14,7 +14,6 @@ use url::Url;
 
 use rattler_conda_types::{Platform, PrefixRecord, Arch};
 use rattler_lock::{CondaPackageData, LockedPackage, PypiIndexes, PypiPackageData, UrlOrPath};
-use rattler_py::PyLockedPackage;
 
 use uv_cache::Cache;
 use uv_client::{RegistryClient, RegistryClientBuilder, FlatIndexClient, Connectivity};
@@ -26,7 +25,6 @@ use uv_configuration::{
     Concurrency,
     KeyringProviderType,
     SourceStrategy,
-    TrustedHost,
     IndexStrategy,
     PreviewMode,
 };
@@ -42,7 +40,6 @@ use uv_distribution_types::{
     InstalledDist,
     Name,
     Resolution,
-    IndexCapabilities,
 };
 use uv_dispatch::{SharedState, BuildDispatch};
 use uv_install_wheel::LinkMode;
@@ -55,6 +52,11 @@ use uv_python::{Interpreter, PythonEnvironment};
 use uv_types::{HashStrategy, InFlight, BuildIsolation};
 
 mod rattler_uv_interop;
+mod git;
+
+use crate::git::{
+    LockedGitUrl
+};
 
 use crate::rattler_uv_interop::{
     convert_to_dist,
@@ -135,38 +137,6 @@ enum ValidateCurrentInstall {
     Reinstall,
 }
 
-pub struct LockedGitUrl(Url);
-
-impl LockedGitUrl {
-    /// Creates a new [`LockedGitUrl`] from a [`Url`].
-    pub fn new(url: Url) -> Self {
-        Self(url)
-    }
-
-    /// Returns true if the given URL is a locked git URL.
-    /// This is used to differentiate between a regular Url and a [`LockedGitUrl`]
-    /// that starts with `git+`.
-    pub fn is_locked_git_url(locked_url: &Url) -> bool {
-        locked_url.scheme().starts_with("git+")
-    }
-
-    /// Parses a locked git URL from a string.
-    pub fn parse(url: &str) -> Result<Self, Box<dyn Error>> {
-        let url = Url::parse(url)?;
-        Ok(Self(url))
-    }
-
-    /// Converts this [`LockedGitUrl`] into a [`Url`].
-    pub fn to_url(&self) -> Url {
-        self.0.clone()
-    }
-}
-
-impl From<LockedGitUrl> for Url {
-    fn from(value: LockedGitUrl) -> Self {
-        value.0
-    }
-}
 
 /// A wrapper around `Url` which represents a "canonical" version of an original URL.
 ///
@@ -328,7 +298,7 @@ impl PinnedGitCheckout {
     /// Extracts a pinned git checkout from the query pairs and the hash
     /// fragment in the given URL.
     pub fn from_locked_url(locked_url: &LockedGitUrl) -> Result<PinnedGitCheckout, Box<dyn Error>> {
-        let url = &locked_url.0;
+        let url = &locked_url.to_url();
         let mut reference = None;
         let mut subdirectory = None;
 
@@ -1162,6 +1132,13 @@ async fn remove_unncessary_packages(
 }
 
 
+unsafe fn extract_locked_package(obj: &Bound<'_, PyAny>) -> LockedPackage {
+    unsafe {
+        let ptr = obj.as_ptr() as *const LockedPackage;
+        ptr::read(ptr) // Consumes and returns the LockedPackage
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (packages, prefix = None))]
 fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Option<String>) -> PyResult<()> {
@@ -1189,7 +1166,12 @@ fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Op
 
     let rs_locked_packages: Vec<LockedPackage> = py_pypi_locked_packages
         .iter()
-        .map(|pkg| pkg.extract::<PyLockedPackage>().unwrap().into());
+        .map(|&pkg| {
+            unsafe {
+                extract_locked_package(pkg)
+            }
+        })
+        .collect();
 
     println!("Prefix: {}", target_prefix);
     println!("Packages: {:?}", py_locked_packages);

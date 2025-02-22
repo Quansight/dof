@@ -1,29 +1,27 @@
 use std::borrow::Cow;
 use url::Url;
-use pyo3::exceptions::PyValueError;
 use std::str::FromStr;
 
-use pyo3::prelude::*;
-use pyo3::types::PyList;
-use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::path::{PathBuf, Path};
-use std::sync::LazyLock;
+use std::path::Path;
 
-use rattler_conda_types::{Platform, PrefixRecord, Arch};
-use rattler_lock::{LockedPackage, PypiIndexes, PypiPackageData, UrlOrPath, ConversionError};
+use rattler_lock::{PypiPackageData, UrlOrPath};
 
-use uv_cache::{Cache, ArchiveTarget, ArchiveTimestamp};
-use uv_configuration::{ConfigSettings, RAYON_INITIALIZE};
-use uv_distribution::RegistryWheelIndex;
-use uv_distribution_types::{IndexLocations, IndexUrl, Index, CachedDist, Dist, CachedRegistryDist, InstalledDist, Name};
-use uv_install_wheel::LinkMode;
-use uv_installer::{SitePackages, Installer, Planner};
+use uv_cache::{ArchiveTarget, ArchiveTimestamp};
+use uv_distribution_types::{IndexUrl, Dist, InstalledDist};
 use uv_normalize::PackageName;
-use uv_pep508::VerbatimUrl;
-use uv_platform_tags::Tags;
-use uv_python::{Interpreter, PythonEnvironment};
-use uv_types::HashStrategy;
+
+use crate::git::{
+    LockedGitUrl
+};
+
+/// Converts `pe508::PackageName` to  `uv_normalize::PackageName`
+pub fn to_uv_normalize(
+    normalise: &pep508_rs::PackageName,
+) -> Result<PackageName, Box<dyn Error>> {
+    Ok(PackageName::from_str(normalise.to_string().as_str())?)
+}
+
 
 /// Strip of the `direct` scheme from the url if it is there
 pub fn strip_direct_scheme(url: &Url) -> Cow<'_, Url> {
