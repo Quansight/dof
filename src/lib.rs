@@ -646,11 +646,11 @@ impl InstallPlanner {
 
 }
 
-fn find_installed_packages(path: &Path) -> Result<Vec<PrefixRecord>, std::io::Error> {
-    // Initialize rayon explicitly to avoid implicit initialization.
-    LazyLock::force(&RAYON_INITIALIZE);
-    PrefixRecord::collect_from_prefix(path)
-}
+// fn find_installed_packages(path: &Path) -> Result<Vec<PrefixRecord>, std::io::Error> {
+//     // Initialize rayon explicitly to avoid implicit initialization.
+//     LazyLock::force(&RAYON_INITIALIZE);
+//     PrefixRecord::collect_from_prefix(path)
+// }
 
 fn get_arch_tags(platform: &Platform) -> Result<uv_platform_tags::Arch, Box<dyn std::error::Error>> {
     match platform.arch() {
@@ -912,7 +912,7 @@ async fn install_pypi_packages(
         &in_flight,
     ).await?;
 
-    remove_unncessary_packages(extraneous, reinstalls).await;
+    let _ = remove_unncessary_packages(extraneous, reinstalls).await;
 
     // Install the resolved distributions.
     // At this point we have all the wheels we need to install available to link locally
@@ -939,6 +939,7 @@ async fn install_pypi_packages(
 }
 
 // Download, build, and unzip any missing distributions.
+#[allow(clippy::too_many_arguments)]
 async fn acquire_missing_distributions<'a>(
     remote: Vec<Dist>,
     registry_client: Arc<RegistryClient>,
@@ -967,10 +968,10 @@ async fn acquire_missing_distributions<'a>(
         }
 
         let preparer = Preparer::new(
-            &uv_cache,
-            &tags,
+            uv_cache,
+            tags,
             &uv_types::HashStrategy::None,
-            &build_options,
+            build_options,
             distribution_database,
         );
 
@@ -978,7 +979,7 @@ async fn acquire_missing_distributions<'a>(
         let remote_dists = preparer
             .prepare(
                 remote.iter().map(|d| d.clone()).collect(),
-                &in_flight,
+                in_flight,
                 &resolution,
             )
             .await?;
@@ -1078,11 +1079,18 @@ fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Op
     println!("Packages: {:?}", py_locked_packages);
     println!("PyPI packages: {:?}", py_pypi_locked_packages);
 
-    install_pypi_packages(
-        PathBuf::from_str(target_prefix.as_str())?,
-        rs_locked_packages,
-        &HashMap::new(),
-    );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let _ = runtime.block_on(
+        install_pypi_packages(
+            PathBuf::from_str(target_prefix.as_str())?,
+            rs_locked_packages,
+            &HashMap::new(),
+        )
+    ).map_err(|_| PyErr::new::<PyValueError, _>("Error running PyPI install"));
     Ok(())
 }
 
@@ -1101,7 +1109,7 @@ fn install_lockfile<'py>(py: Python<'py>, lockfile: &Bound<'py, PyAny>, prefix: 
 
 /// A Python module implemented in Rust.
 #[pymodule(name="_dof")]
-fn foo(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn dof(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(install_pypi, m)?)?;
     m.add_function(wrap_pyfunction!(install_lockfile, m)?)?;
     Ok(())
