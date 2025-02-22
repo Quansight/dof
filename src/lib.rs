@@ -14,6 +14,7 @@ use url::Url;
 
 use rattler_conda_types::{Platform, PrefixRecord, Arch};
 use rattler_lock::{CondaPackageData, LockedPackage, PypiIndexes, PypiPackageData, UrlOrPath};
+use rattler_py::PyLockedPackage;
 
 use uv_cache::Cache;
 use uv_client::{RegistryClient, RegistryClientBuilder, FlatIndexClient, Connectivity};
@@ -862,12 +863,13 @@ fn locked_indexes_to_index_locations(
     Ok(IndexLocations::new(indexes, flat_index, no_index))
 }
 
-
 /// Install the given packages into the prefix.
 ///
 /// If the packages exist in the cache, those will be used. Otherwise, download the requested
 /// versions and install all into the prefix.
-async fn _install_pypi(
+///
+/// Modified from install_pypi::update_python_distributions
+async fn install_pypi_packages(
     prefix: PathBuf,
     packages: Vec<LockedPackage>,
     environment_variables: &HashMap<String, String>
@@ -952,9 +954,10 @@ async fn _install_pypi(
     };
 
 
+    let concurrency = Concurrency::default();
     let dep_metadata = DependencyMetadata::default();
     let constraints = Constraints::default();
-
+    let in_flight = InFlight::default();
     let shared_state = SharedState::default();
     let build_dispatch = BuildDispatch::new(
         &registry_client,
@@ -973,7 +976,7 @@ async fn _install_pypi(
         &HashStrategy::None, // This is always set by default in pixi when generating the UvResolutionContext from a workspace
         None,
         SourceStrategy::Disabled,
-        Concurrency::default(),
+        concurrency,
         PreviewMode::Disabled,
     )
     // ! Important this passes any CONDA activation to the uv build process
@@ -1007,10 +1010,13 @@ async fn _install_pypi(
 
 
     // Determine the currently installed conda packages.
-    let installed_packages = find_installed_packages(prefix.as_path())
-        .map_err(|_| PyErr::new::<PyValueError, _>(
-            "Cannot determine installed packages in the given environment."
-        ))?;
+    //
+    // Only used to figure out which wheels will clobber conda packages.
+    //
+    // let installed_packages = find_installed_packages(prefix.as_path())
+    //     .map_err(|_| PyErr::new::<PyValueError, _>(
+    //         "Cannot determine installed packages in the given environment."
+    //     ))?;
 
     let InstallPlan {
         local,
@@ -1025,11 +1031,17 @@ async fn _install_pypi(
 
     let remote_dists = acquire_missing_distributions(
         remote,
-        registry_client,
-        index_locations,
+        Arc::clone(&registry_client),
+        &index_locations,
         &build_dispatch,
+        &concurrency,
+        &uv_cache,
+        &tags,
+        &build_options,
+        &in_flight,
     ).await?;
 
+    remove_unncessary_packages(extraneous, reinstalls).await;
 
     // Install the resolved distributions.
     // At this point we have all the wheels we need to install available to link locally
@@ -1055,27 +1067,25 @@ async fn _install_pypi(
     Ok(())
 }
 
+// Download, build, and unzip any missing distributions.
 async fn acquire_missing_distributions<'a>(
     remote: Vec<Dist>,
     registry_client: Arc<RegistryClient>,
-    index_locations: IndexLocations,
-    build_dispatch: &'a BuildDispatch,
+    index_locations: &IndexLocations,
+    build_dispatch: &'a BuildDispatch<'a>,
+    concurrency: &'a Concurrency,
+    uv_cache: &'a Cache,
+    tags: &'a Tags,
+    build_options: &'a BuildOptions,
+    in_flight: &'a InFlight,
 ) -> Result<Vec<CachedDist>, Box<dyn Error>> {
-    // Download, build, and unzip any missing distributions.
     if remote.is_empty() {
-        Vec::new()
+        Ok(Vec::new())
     } else {
-        let start = std::time::Instant::now();
-
-        // let options = UvReporterOptions::new()
-        //     .with_length(remote.len() as u64)
-        //     .with_starting_tasks(remote.iter().map(|(d, _)| format!("{}", d.name())))
-        //     .with_top_level_message("Preparing distributions");
-
         let distribution_database = DistributionDatabase::new(
             registry_client.as_ref(),
-            &build_dispatch,
-            uv_context.concurrency.downloads,
+            build_dispatch,
+            concurrency.downloads,
         );
 
         // Before hitting the network let's make sure the credentials are available to
@@ -1086,43 +1096,33 @@ async fn acquire_missing_distributions<'a>(
         }
 
         let preparer = Preparer::new(
-            &uv_context.cache,
+            &uv_cache,
             &tags,
             &uv_types::HashStrategy::None,
             &build_options,
             distribution_database,
-        )
-        .with_reporter(UvReporter::new_arc(options));
+        );
 
         let resolution = Resolution::default();
         let remote_dists = preparer
             .prepare(
-                remote.iter().map(|(d, _)| d.clone()).collect(),
-                &uv_context.in_flight,
+                remote.iter().map(|d| d.clone()).collect(),
+                &in_flight,
                 &resolution,
             )
-            .await
-            .into_diagnostic()
-            .context("Failed to prepare distributions")?;
+            .await?;
 
-        let s = if remote_dists.len() == 1 { "" } else { "s" };
-        tracing::info!(
-            "{}",
-            format!(
-                "Prepared {} in {}",
-                format!("{} package{}", remote_dists.len(), s),
-                elapsed(start.elapsed())
-            )
-        );
+        Ok(remote_dists)
+    }
+}
 
-        remote_dists
-    };
-
+async fn remove_unncessary_packages(
+    extraneous: Vec<InstalledDist>,
+    reinstalls: Vec<InstalledDist>,
+) -> Result<(), Box<dyn Error>> {
     // Remove any unnecessary packages.
     if !extraneous.is_empty() || !reinstalls.is_empty() {
-        let start = std::time::Instant::now();
-
-        for dist_info in extraneous.iter().chain(reinstalls.iter().map(|(d, _)| d)) {
+        for dist_info in extraneous.iter().chain(reinstalls.iter()) {
             let summary = match uv_installer::uninstall(dist_info).await {
                 Ok(sum) => sum,
                 // Get error types from uv_installer
@@ -1139,15 +1139,13 @@ async fn acquire_missing_distributions<'a>(
                         .iter()
                         .any(|segment| Path::new(segment) == Path::new("site-packages"))
                     {
-                        tokio::fs::remove_dir_all(dist_info.path())
-                            .await
-                            .into_diagnostic()?;
+                        tokio::fs::remove_dir_all(dist_info.path()).await?;
                     }
 
                     continue;
                 }
                 Err(err) => {
-                    return Err(miette::miette!(err));
+                    return Err(err.into());
                 }
             };
             tracing::debug!(
@@ -1159,23 +1157,8 @@ async fn acquire_missing_distributions<'a>(
                 if summary.dir_count == 1 { "y" } else { "ies" },
             );
         }
-
-        let s = if extraneous.len() + reinstalls.len() == 1 {
-            ""
-        } else {
-            "s"
-        };
-        tracing::debug!(
-            "{}",
-            format!(
-                "Uninstalled {} in {}",
-                format!("{} package{}", extraneous.len() + reinstalls.len(), s),
-                elapsed(start.elapsed())
-            )
-        );
     }
-
-
+    Ok(())
 }
 
 
@@ -1204,11 +1187,19 @@ fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Op
         })
         .collect();
 
+    let rs_locked_packages: Vec<LockedPackage> = py_pypi_locked_packages
+        .iter()
+        .map(|pkg| pkg.extract::<PyLockedPackage>().unwrap().into());
+
     println!("Prefix: {}", target_prefix);
     println!("Packages: {:?}", py_locked_packages);
     println!("PyPI packages: {:?}", py_pypi_locked_packages);
 
-    _install_pypi(prefix, packages);
+    install_pypi_packages(
+        PathBuf::from_str(target_prefix.as_str())?,
+        rs_locked_packages,
+        &HashMap::new(),
+    );
 
     // let result = _install_pypi(prefix, packages).or_else(|_| PyErr::new::<PyValueError, _>(
     //     "Error install pypi packages; cannot continue."
