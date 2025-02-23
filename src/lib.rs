@@ -1,10 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::ptr;
 use std::path::{PathBuf, Path};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::LazyLock;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -12,14 +10,13 @@ use pyo3::types::PyList;
 use reqwest::Client;
 use url::Url;
 
-use rattler_conda_types::{Platform, PrefixRecord, Arch};
+use rattler_conda_types::{Platform, Arch};
 use rattler_lock::{CondaPackageData, LockedPackage, PypiIndexes, PypiPackageData, UrlOrPath};
 
 use uv_cache::Cache;
 use uv_client::{RegistryClient, RegistryClientBuilder, FlatIndexClient, Connectivity};
 use uv_configuration::{
     ConfigSettings,
-    RAYON_INITIALIZE,
     BuildOptions,
     Constraints,
     Concurrency,
@@ -646,12 +643,6 @@ impl InstallPlanner {
 
 }
 
-// fn find_installed_packages(path: &Path) -> Result<Vec<PrefixRecord>, std::io::Error> {
-//     // Initialize rayon explicitly to avoid implicit initialization.
-//     LazyLock::force(&RAYON_INITIALIZE);
-//     PrefixRecord::collect_from_prefix(path)
-// }
-
 fn get_arch_tags(platform: &Platform) -> Result<uv_platform_tags::Arch, Box<dyn std::error::Error>> {
     match platform.arch() {
         None => unreachable!("every platform we support has an arch"),
@@ -742,7 +733,7 @@ fn locked_indexes_to_index_locations(
 /// Modified from install_pypi::update_python_distributions
 async fn install_pypi_packages(
     prefix: PathBuf,
-    packages: Vec<LockedPackage>,
+    packages: Vec<&LockedPackage>,
     environment_variables: &HashMap<String, String>
 ) -> Result<(), Box<dyn Error>> {
     // Hard code this for now, otherwise we depend on a lot of pixi code
@@ -754,6 +745,8 @@ async fn install_pypi_packages(
         true,
         false,
     )?;
+
+    println!("Tags acquired");
 
     let lockfile_dir = dirs::cache_dir()
         .ok_or("Couldn't find lockfile directory")?
@@ -769,11 +762,13 @@ async fn install_pypi_packages(
             .map_err(|_| "Failed to create uv cache directory.")?;
     }
 
-    let uv_cache = Cache::from_path(uv_cache_dir);
-
+    let uv_cache = Cache::from_path(&uv_cache_dir);
     // Get the python interpreter for the prefix
     let python_location = prefix.join("bin/python");
-    let interpreter = Interpreter::query(&python_location, &uv_cache)?;
+
+    println!("Lockfile directory: {} uv cache dir: {}, python locaction {:?}", lockfile_dir.to_string_lossy(), uv_cache_dir.to_string_lossy(), python_location);
+
+    let interpreter = Interpreter::query(python_location, &uv_cache)?;
     println!(
         "Installing into interpreter {} at {}", interpreter.key(), interpreter.sys_prefix().display()
     );
@@ -1034,11 +1029,14 @@ async fn remove_unncessary_packages(
 }
 
 
-unsafe fn extract_locked_package(obj: &Bound<'_, PyAny>) -> LockedPackage {
-    unsafe {
-        let ptr = obj.as_ptr() as *const LockedPackage;
-        ptr::read(ptr) // Consumes and returns the LockedPackage
-    }
+unsafe fn extract_locked_package<'py>(obj: &Bound<'py, PyAny>) -> &'py LockedPackage {
+    // let type_name = obj.get_type().name().unwrap().to_string();
+
+    // // This line prints "PyLockedPackage", so I know we are looking at the right object
+    // println!("{}", type_name);
+
+    let lp: &LockedPackage =  unsafe { std::mem::transmute(obj) };
+    lp
 }
 
 #[pyfunction]
@@ -1066,7 +1064,7 @@ fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Op
         })
         .collect();
 
-    let rs_locked_packages: Vec<LockedPackage> = py_pypi_locked_packages
+    let rs_locked_packages: Vec<&LockedPackage> = py_pypi_locked_packages
         .iter()
         .map(|&pkg| {
             unsafe {
@@ -1075,9 +1073,9 @@ fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Op
         })
         .collect();
 
-    println!("Prefix: {}", target_prefix);
-    println!("Packages: {:?}", py_locked_packages);
-    println!("PyPI packages: {:?}", py_pypi_locked_packages);
+    // println!("Prefix: {}", target_prefix);
+    // println!("Packages: {:?}", py_locked_packages);
+    // println!("PyPI packages: {:?}", py_pypi_locked_packages);
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
