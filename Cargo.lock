@@ -719,6 +719,7 @@ dependencies = [
  "percent-encoding",
  "pyo3",
  "rattler_conda_types",
+ "rattler_digest",
  "rattler_lock",
  "reqwest",
  "tokio",

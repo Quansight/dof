@@ -11,7 +11,8 @@ use reqwest::Client;
 use url::Url;
 
 use rattler_conda_types::{Platform, Arch};
-use rattler_lock::{CondaPackageData, LockedPackage, PypiIndexes, PypiPackageData, UrlOrPath};
+use rattler_lock::{CondaBinaryData, CondaPackageData, LockedPackage, PackageHashes, PypiIndexes, PypiPackageData, PypiPackageEnvironmentData, UrlOrPath};
+use rattler_digest::{Md5Hash, Sha256Hash};
 
 use uv_cache::Cache;
 use uv_client::{RegistryClient, RegistryClientBuilder, FlatIndexClient, Connectivity};
@@ -733,7 +734,7 @@ fn locked_indexes_to_index_locations(
 /// Modified from install_pypi::update_python_distributions
 async fn install_pypi_packages(
     prefix: PathBuf,
-    packages: Vec<&LockedPackage>,
+    packages: Vec<LockedPackage>,
     environment_variables: &HashMap<String, String>
 ) -> Result<(), Box<dyn Error>> {
     // Hard code this for now, otherwise we depend on a lot of pixi code
@@ -774,6 +775,9 @@ async fn install_pypi_packages(
     );
 
     let venv = PythonEnvironment::from_interpreter(interpreter);
+    println!(
+        "venv {:?}", venv
+    );
 
     // uv registry settings
     let config_settings = ConfigSettings::default();
@@ -819,6 +823,7 @@ async fn install_pypi_packages(
         )
     };
 
+    println!("Setting up BuildDispatch!");
 
     let concurrency = Concurrency::default();
     let dep_metadata = DependencyMetadata::default();
@@ -858,9 +863,12 @@ async fn install_pypi_packages(
     // Warn the user about conda packages that will be filtered out
     let conda_packages: Vec<&CondaPackageData> = packages
         .iter()
-        .filter_map(|pkg| pkg.as_conda())
+        .filter_map(|pkg| {
+            pkg.as_conda()
+        })
         .collect();
-    println!("Conda packages passed in! Ignoring: {:?}", conda_packages);
+
+    println!("Conda packages passed in! Ignoring: {:?}", conda_packages.len());
 
     // Create a map of the required packages
     let required_map: HashMap<PackageName, &PypiPackageData> =
@@ -894,6 +902,8 @@ async fn install_pypi_packages(
         registry_index,
         &required_map,
     )?;
+
+    println!("Install plan generated.\n  local: {:?}\n  remote: {:?}\n  reinstalls: {:?}\n  extraneous: {:?}", local, remote, reinstalls, extraneous);
 
     let remote_dists = acquire_missing_distributions(
         remote,
@@ -1028,8 +1038,62 @@ async fn remove_unncessary_packages(
     Ok(())
 }
 
+fn extract_locked_package<'py>(
+    _py: Python<'py>, obj: &Bound<'py, PyAny>
+) -> Result<LockedPackage, Box<dyn Error>> {
+    let name: String = obj.getattr("name").and_then(|attr| attr.extract())?;
+    let version: String = obj.getattr("pypi_version").and_then(|attr| attr.extract())?;
+    let location: String = obj.getattr("location").and_then(|attr| attr.extract())?;
+    let editable: bool = obj.getattr("pypi_is_editable").and_then(|attr| attr.extract())?;
+    let pypi_requires_dist: Vec<String> = obj.getattr("pypi_requires_dist").and_then(|attr| attr.extract())?;
+    let pypi_requires_python: Option<String> = obj.getattr("pypi_requires_python").and_then(|attr| attr.extract())?;
 
-unsafe fn extract_locked_package<'py>(obj: &Bound<'py, PyAny>) -> &'py LockedPackage {
+
+    let requires_dist: Vec<pep508_rs::Requirement> = pypi_requires_dist
+        .iter()
+        .map(|item| -> pep508_rs::Requirement {
+            pep508_rs::Requirement::from_str(item.as_str()).unwrap()
+        }).collect::<Vec<_>>();
+
+    let requires_python = pypi_requires_python.and_then(
+        |spec| pep440_rs::VersionSpecifiers::from_str(&spec).ok()
+    );
+
+    let package_hashes: Bound<'py, PyAny> = obj.getattr("hashes")?;
+    let md5: Bound<'py, PyAny> = package_hashes.getattr("md5")?;
+    let sha256: Bound<'py, PyAny> = package_hashes.getattr("sha256")?;
+
+    // let hash = PackageHashes::from_hashes(
+    //     // Some(Md5Hash::from(md5.extract::<Vec<u8>>()?)),
+    //     // sha256.extract()?,
+    //     // Some(Md5Hash::from(md5.extract()?)),
+    //     // Some(Sha256Hash::from(sha256.extract()?)),
+    // );
+
+    // let hash = PackageHashes::Md5Sha256(
+    //     md5.extract::<Vec<u8>>()?.into(), sha256.extract()?.into()
+    // );
+
+    let hash = None;
+
+    Ok(LockedPackage::Pypi(
+        PypiPackageData {
+            name: pep508_rs::PackageName::from_str(name.as_str())?,
+            version: pep440_rs::Version::from_str(version.as_str())?,
+            location: UrlOrPath::from_str(location.as_str())?,
+            hash,
+            requires_dist,
+            requires_python,
+            editable,
+        },
+        PypiPackageEnvironmentData{
+            extras: std::collections::BTreeSet::new(),
+        },
+    ))
+}
+
+
+unsafe fn cast_locked_package<'py>(obj: &Bound<'py, PyAny>) -> &'py LockedPackage {
     // let type_name = obj.get_type().name().unwrap().to_string();
 
     // // This line prints "PyLockedPackage", so I know we are looking at the right object
@@ -1041,7 +1105,7 @@ unsafe fn extract_locked_package<'py>(obj: &Bound<'py, PyAny>) -> &'py LockedPac
 
 #[pyfunction]
 #[pyo3(signature = (packages, prefix = None))]
-fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Option<String>) -> PyResult<()> {
+fn install_pypi<'py>(py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Option<String>) -> PyResult<()> {
     let py_locked_packages: Vec<Bound<'py, PyAny>> = packages
         .iter()
         .map(|pkg| pkg.getattr("_package"))
@@ -1064,18 +1128,12 @@ fn install_pypi<'py>(_py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Op
         })
         .collect();
 
-    let rs_locked_packages: Vec<&LockedPackage> = py_pypi_locked_packages
+    let rs_locked_packages: Vec<LockedPackage> = py_pypi_locked_packages
         .iter()
         .map(|&pkg| {
-            unsafe {
-                extract_locked_package(pkg)
-            }
+            extract_locked_package(py, pkg).unwrap()
         })
         .collect();
-
-    // println!("Prefix: {}", target_prefix);
-    // println!("Packages: {:?}", py_locked_packages);
-    // println!("PyPI packages: {:?}", py_pypi_locked_packages);
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
