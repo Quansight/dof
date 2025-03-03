@@ -9,7 +9,7 @@ Goal of this demo project is to showcase:
 To setup your dev env, create a conda env
 
 ```
-$ conda env create -f environment.yml 
+$ conda env create -f environment.yml
 
 $ conda activate dof-dev
 ```
@@ -39,14 +39,29 @@ $ dof checkpoint diff --rev <revision uuid>
 To see all the packages in an environment
 
 ```
- $ dof checkpoint show --rev <revision uuid> 
+ $ dof checkpoint show --rev <revision uuid>
  ```
 
 #### Example
 
-Start with the `dof-dev` environment
+Start with the `dof-dev` environment. Ensure that your system has `rust` (or
+preferably [`rustup`](https://rustup.rs/), so that you can maintain your rust
+toolchain). Once you have `rustup`, ensure your toolchain is up to date:
+
+```bash
+rustup toolchain install nightly
+rustup update
+
+# If you want LSP support for development
+rustup component add rust-analyzer
 ```
-$ conda env create -f environment.yml 
+
+The `maturin` build backend will take care of compilation when you run `pip
+install .` down below 👇.
+
+
+```bash
+$ conda env create -f environment.yml
 . . .
 $ conda activate dof-dev
 
@@ -57,9 +72,9 @@ $ python -m pip install -e .
 Now, try to create some checkpoints and install some packages
 ```bash
 # createa a checkpoint
-(dof-dev) sophia:dof/ (main✗) $ dof checkpoint save  
-(dof-dev) sophia:dof/ (main✗) $ dof checkpoint list              
-                                                 Checkpoints                                                  
+(dof-dev) sophia:dof/ (main✗) $ dof checkpoint save
+(dof-dev) sophia:dof/ (main✗) $ dof checkpoint list
+                                                 Checkpoints
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ uuid                             ┃ tags                                 ┃ timestamp                        ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
@@ -67,18 +82,18 @@ Now, try to create some checkpoints and install some packages
 └──────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────┘
 
 # install a new package
-(dof-dev) sophia:dof/ (main✗) $ conda install jinja2  
+(dof-dev) sophia:dof/ (main✗) $ conda install jinja2
 
 # check the diff
-(dof-dev) sophia:dof/ (main✗) $ dof checkpoint diff --rev 1bc3a3a434454437a9f72061672b8189            
+(dof-dev) sophia:dof/ (main✗) $ dof checkpoint diff --rev 1bc3a3a434454437a9f72061672b8189
 diff with rev 1bc3a3a434454437a9f72061672b8189
 + url='https://conda.anaconda.org/conda-forge/linux-64/markupsafe-3.0.2-py312h178313f_1.conda'
 + url='https://conda.anaconda.org/conda-forge/noarch/jinja2-3.1.5-pyhd8ed1ab_0.conda'
 
 # save a new checkpoint
-(dof-dev) sophia:dof/ (main✗) $ dof checkpoint save 
-(dof-dev) sophia:dof/ (main✗) $ dof checkpoint list     
-                                                 Checkpoints                                                  
+(dof-dev) sophia:dof/ (main✗) $ dof checkpoint save
+(dof-dev) sophia:dof/ (main✗) $ dof checkpoint list
+                                                 Checkpoints
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ uuid                             ┃ tags                                 ┃ timestamp                        ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
@@ -90,12 +105,12 @@ diff with rev 1bc3a3a434454437a9f72061672b8189
 (dof-dev) sophia:dof/ (main✗) $ python -m pip install blinker
 
 # check the diff from the last checkpoint
-(dof-dev) sophia:dof/ (main✗) $ dof checkpoint diff --rev d1256c34d93c48eb96ccfb125c598ffe     
+(dof-dev) sophia:dof/ (main✗) $ dof checkpoint diff --rev d1256c34d93c48eb96ccfb125c598ffe
 diff with rev d1256c34d93c48eb96ccfb125c598ffe
 + name='blinker' version='1.9.0' build='pypi_0' url=None
 
 # check the diff from the first checkpoint
-(dof-dev) sophia:dof/ (main✗) $ dof checkpoint diff --rev 1bc3a3a434454437a9f72061672b8189  
+(dof-dev) sophia:dof/ (main✗) $ dof checkpoint diff --rev 1bc3a3a434454437a9f72061672b8189
 diff with rev 1bc3a3a434454437a9f72061672b8189
 + name='blinker' version='1.9.0' build='pypi_0' url=None
 + url='https://conda.anaconda.org/conda-forge/linux-64/markupsafe-3.0.2-py312h178313f_1.conda'
@@ -105,7 +120,7 @@ diff with rev 1bc3a3a434454437a9f72061672b8189
 (dof-dev) sophia:dof/ (main✗) $ conda uninstall jinja2
 
 # now recheck the diff from the last checkpoint
-(dof-dev) sophia:dof/ (main✗) $ dof checkpoint diff --rev d1256c34d93c48eb96ccfb125c598ffe    
+(dof-dev) sophia:dof/ (main✗) $ dof checkpoint diff --rev d1256c34d93c48eb96ccfb125c598ffe
 diff with rev d1256c34d93c48eb96ccfb125c598ffe
 + name='blinker' version='1.9.0' build='pypi_0' url=None
 - url='https://conda.anaconda.org/conda-forge/linux-64/markupsafe-3.0.2-py312h178313f_1.conda'
@@ -152,8 +167,8 @@ $ dof pull --target <namespace>/<environment>:<tag> --rev <revision uuid>
 
 ```bash
 $ dof checkpoint save
-$ dof checkpoint list                                             
-                         Checkpoints                          
+$ dof checkpoint list
+                         Checkpoints
 ┏━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ uuid     ┃ tags         ┃ timestamp                        ┃
 ┡━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
@@ -163,18 +178,18 @@ $ dof checkpoint list
 
 $ dof push -t sophia/dof-dev:8e45de08 --rev 8e45de08
 
-$ curl http://localhost:8000/sophia                                    
-{"data":{"namespace":"sophia","environments":["dof-dev"]}}  
+$ curl http://localhost:8000/sophia
+{"data":{"namespace":"sophia","environments":["dof-dev"]}}
 
-$ curl http://localhost:8000/sophia/dof-dev       
-{"data":{"namespace":"sophia","environment":"dof-dev","checkpoints":["8e45de08"]}}  
+$ curl http://localhost:8000/sophia/dof-dev
+{"data":{"namespace":"sophia","environment":"dof-dev","checkpoints":["8e45de08"]}}
 
 $ curl http://localhost:8000/sophia/dof-dev/8e45de08 | jq  --raw-output .data.checkpoint_data
 
 $ dof checkpoint delete --rev 8e45de08
 
 $ dof checkpoint list
-        Checkpoints        
+        Checkpoints
 ┏━━━━━━┳━━━━━━┳━━━━━━━━━━━┓
 ┃ uuid ┃ tags ┃ timestamp ┃
 ┡━━━━━━╇━━━━━━╇━━━━━━━━━━━┩
@@ -183,11 +198,13 @@ $ dof checkpoint list
 
 $ dof pull -t sophia/dof-dev:8e45de08 --rev 8e45de08
 
-$ dof checkpoint list                                               
-                         Checkpoints                          
+$ dof checkpoint list
+                         Checkpoints
 ┏━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ uuid     ┃ tags         ┃ timestamp                        ┃
 ┡━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ 8e45de08 │ ['8e45de08'] │ 2025-02-04 01:39:19.260525+00:00 │
 └──────────┴──────────────┴──────────────────────────────────┘
 ```
+
+### Installing from a lockfile

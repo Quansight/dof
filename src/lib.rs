@@ -565,6 +565,9 @@ impl InstallPlanner {
 
         // Walk over all installed packages and check if they are required
         for dist in site_packages.iter() {
+
+            println!("Found installed pypi package: {:?}", dist.name());
+
             // Check if we require the package to be installed
             let pkg = required_pkgs.get(dist.name());
             // Get the installer name
@@ -583,6 +586,7 @@ impl InstallPlanner {
                         // let's re-install to make sure that we have the **correct** version
                         reinstalls.push(dist.clone());
                     } else {
+                        println!("huh?");
                         // Check if we need to reinstall
                         match need_reinstall(dist, required_pkg, &self.lock_file_dir)? {
                             ValidateCurrentInstall::Keep => {
@@ -594,6 +598,7 @@ impl InstallPlanner {
                             }
                         }
                     }
+
                     // Okay so we need to re-install the package
                     // let's see if we need the remote or local version
                     self.decide_installation_source(
@@ -644,7 +649,7 @@ impl InstallPlanner {
 
 }
 
-fn get_arch_tags(platform: &Platform) -> Result<uv_platform_tags::Arch, Box<dyn std::error::Error>> {
+fn get_arch_tags(platform: &Platform) -> Result<uv_platform_tags::Arch, Box<dyn Error>> {
     match platform.arch() {
         None => unreachable!("every platform we support has an arch"),
         Some(Arch::X86) => Ok(uv_platform_tags::Arch::X86),
@@ -767,7 +772,9 @@ async fn install_pypi_packages(
     // Get the python interpreter for the prefix
     let python_location = prefix.join("bin/python");
 
-    println!("Lockfile directory: {} uv cache dir: {}, python locaction {:?}", lockfile_dir.to_string_lossy(), uv_cache_dir.to_string_lossy(), python_location);
+    println!("Lockfile directory: {}", lockfile_dir.to_string_lossy());
+    println!("uv cache dir: {}", uv_cache_dir.to_string_lossy());
+    println!("python location {:?}", python_location);
 
     let interpreter = Interpreter::query(python_location, &uv_cache)?;
     println!(
@@ -776,7 +783,7 @@ async fn install_pypi_packages(
 
     let venv = PythonEnvironment::from_interpreter(interpreter);
     println!(
-        "venv {:?}", venv
+        "venv.root {}", venv.root().to_string_lossy()
     );
 
     // uv registry settings
@@ -868,7 +875,7 @@ async fn install_pypi_packages(
         })
         .collect();
 
-    println!("Conda packages passed in! Ignoring: {:?}", conda_packages.len());
+    println!("Conda packages passed in: {}", conda_packages.len());
 
     // Create a map of the required packages
     let required_map: HashMap<PackageName, &PypiPackageData> =
@@ -892,12 +899,17 @@ async fn install_pypi_packages(
     //         "Cannot determine installed packages in the given environment."
     //     ))?;
 
+
+    println!("PyPI packages passed in: {}", required_map.len());
+
+    let planner = InstallPlanner::new(uv_cache.clone(), lockfile_dir);
+
     let InstallPlan {
         local,
         remote,
         reinstalls,
         extraneous,
-    } = InstallPlanner::new(uv_cache.clone(), lockfile_dir).plan(
+    } = planner.plan(
         &site_packages,
         registry_index,
         &required_map,
@@ -1092,17 +1104,6 @@ fn extract_locked_package<'py>(
     ))
 }
 
-
-unsafe fn cast_locked_package<'py>(obj: &Bound<'py, PyAny>) -> &'py LockedPackage {
-    // let type_name = obj.get_type().name().unwrap().to_string();
-
-    // // This line prints "PyLockedPackage", so I know we are looking at the right object
-    // println!("{}", type_name);
-
-    let lp: &LockedPackage =  unsafe { std::mem::transmute(obj) };
-    lp
-}
-
 #[pyfunction]
 #[pyo3(signature = (packages, prefix = None))]
 fn install_pypi<'py>(py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Option<String>) -> PyResult<()> {
@@ -1140,14 +1141,16 @@ fn install_pypi<'py>(py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Opt
         .build()
         .unwrap();
 
-    let _ = runtime.block_on(
+    let result = runtime.block_on(
         install_pypi_packages(
             PathBuf::from_str(target_prefix.as_str())?,
             rs_locked_packages,
             &HashMap::new(),
         )
-    ).map_err(|_| PyErr::new::<PyValueError, _>("Error running PyPI install"));
-    Ok(())
+    ).map_err(|err| {
+        PyValueError::new_err("Error running PyPI install")
+    });
+    result
 }
 
 #[pyfunction]
