@@ -207,4 +207,19 @@ $ dof checkpoint list
 └──────────┴──────────────┴──────────────────────────────────┘
 ```
 
-### Installing from a lockfile
+### Installing PyPI packages from a lockfile
+
+1. Generate some lockfiles using `pixi` - make sure they include PyPI packages,
+e.g. `pixi add flask --pypi`.
+2. Find a target conda prefix to install the lockfiles into:
+
+```bash
+conda list
+pip list
+
+dof apply --lockfile flask.lock --prefix <target-prefix>
+
+conda activate <target-env>
+conda list
+pip list
+```
