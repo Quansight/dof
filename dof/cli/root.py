@@ -3,6 +3,7 @@ from typing import Annotated
 
 import typer
 import yaml
+from rattler import LockFile
 
 from dof._src.checkpoint import Checkpoint
 from dof._src.lock import lock_environment
@@ -121,4 +122,4 @@ def apply(
     ],
 ):
     """Apply a lockfile to a conda prefix."""
-    install_lockfile(lockfile, prefix)
+    install_lockfile(LockFile.from_path(lockfile), prefix)
