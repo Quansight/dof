@@ -1,14 +1,15 @@
-import yaml
 import os
-import typer
-from typing import List
-from typing_extensions import Annotated
+from typing import Annotated
 
-from dof._src.lock import lock_environment
+import typer
+import yaml
+
 from dof._src.checkpoint import Checkpoint
+from dof._src.lock import lock_environment
 from dof._src.park.park import Park
 from dof.cli.checkpoint import checkpoint_command
 
+from .._dof import install_lockfile
 
 app = typer.Typer(
     add_completion=False,
@@ -37,7 +38,7 @@ def lock(
 ):
     """Generate a lockfile"""
     solved_env = lock_environment(path=env_file)
-    
+
     # If no output is specified dump yaml output to stdout
     if output is None:
         print(yaml.dump(solved_env.model_dump()))
@@ -99,3 +100,25 @@ def pull(
     prefix = os.environ.get("CONDA_PREFIX")
     chck = Checkpoint.from_checkpoint_dict(checkpoint_data=checkpoint_dict, prefix=prefix)
     chck.save()
+
+@app.command()
+def apply(
+    lockfile: Annotated[
+        str,
+        typer.Option(
+            "--lockfile",
+            "-l",
+            help="lockfile to apply",
+        ),
+    ],
+    prefix: Annotated[
+        str,
+        typer.Option(
+            "--prefix",
+            "-p",
+            help="prefix to apply the target lockfile to",
+        ),
+    ],
+):
+    """Apply a lockfile to a conda prefix."""
+    install_lockfile(lockfile, prefix)

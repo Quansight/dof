@@ -1,7 +1,10 @@
 import asyncio
 import datetime
 
-from conda.core.prefix_data import PrefixData
+try:
+    from conda.core.prefix_data import PrefixData
+except:
+    PrefixData = None
 from rattler import Platform
 from rattler import install as rattler_install
 
