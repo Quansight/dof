@@ -1,3 +1,5 @@
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use std::time::Duration;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::path::{PathBuf, Path};
@@ -11,8 +13,7 @@ use reqwest::Client;
 use url::Url;
 
 use rattler_conda_types::{Platform, Arch};
-use rattler_lock::{CondaBinaryData, CondaPackageData, LockedPackage, PackageHashes, PypiIndexes, PypiPackageData, PypiPackageEnvironmentData, UrlOrPath};
-use rattler_digest::{Md5Hash, Sha256Hash};
+use rattler_lock::{CondaPackageData, LockedPackage, PypiIndexes, PypiPackageData, PypiPackageEnvironmentData, UrlOrPath};
 
 use uv_cache::Cache;
 use uv_client::{RegistryClient, RegistryClientBuilder, FlatIndexClient, Connectivity};
@@ -520,10 +521,27 @@ impl InstallPlanner {
         // First, check if we need to revalidate the package
         // then we should get it from the remote
         if self.uv_cache.must_revalidate(name) {
-            remote.push(convert_to_dist(required_pkg, &self.lock_file_dir)?);
+
+            let res = convert_to_dist(required_pkg, &self.lock_file_dir);
+            match res {
+                Ok(data) => {
+                    remote.push(data)
+                },
+                Err(err) => {
+                    panic!("Problem converting to dist: {:?}", err);
+                }
+            }
             return Ok(());
         }
-        let uv_version = to_uv_version(&required_pkg.version)?;
+        let uv_version_res = to_uv_version(&required_pkg.version);
+        let uv_version = match uv_version_res {
+            Ok(v) => v,
+            Err(err) => {
+                panic!("Problem getting uv version: {:?}", err);
+            }
+        };
+
+
         // If it is not stale its either in the registry cache or not
         let cached = dist_cache.get_cached_dist(name, uv_version);
         // If we have it in the cache we can use that
@@ -531,7 +549,15 @@ impl InstallPlanner {
             local.push(CachedDist::Registry(distribution));
         // If we don't have it in the cache we need to download it
         } else {
-            remote.push(convert_to_dist(required_pkg, &self.lock_file_dir)?);
+            let res  = convert_to_dist(required_pkg, &self.lock_file_dir);
+            match res {
+                Ok(data) => {
+                    remote.push(data)
+                },
+                Err(err) => {
+                    panic!("Problem converting {} to dist: {:?}", required_pkg.name, err);
+                }
+            }
         }
         Ok(())
     }
@@ -578,15 +604,21 @@ impl InstallPlanner {
 
             match pkg {
                 Some(required_pkg) => {
+                    println!("Package {} exists in required packages", required_pkg.name);
+
                     // Add to the list of previously installed packages
                     prev_installed_packages.insert(dist.name());
                     // Check if we need this package installed but it is not currently installed by us
                     if installer != UV_INSTALLER {
+
+                        println!("Reinstalling {} because the installer was {} not {}", required_pkg.name, installer, UV_INSTALLER);
+
                         // We are managing the package but something else has installed a version
                         // let's re-install to make sure that we have the **correct** version
                         reinstalls.push(dist.clone());
                     } else {
-                        println!("huh?");
+                        println!("Checking if {} needs to be reinstalled...", required_pkg.name);
+
                         // Check if we need to reinstall
                         match need_reinstall(dist, required_pkg, &self.lock_file_dir)? {
                             ValidateCurrentInstall::Keep => {
@@ -611,11 +643,16 @@ impl InstallPlanner {
                 }
                 // Second case we are not managing the package
                 None if installer != UV_INSTALLER => {
+
+                    println!("Package {} doesn't exist in required packages; ignoring", dist.name());
+
                     // Ignore packages that we are not managed by us
                     continue;
                 }
                 // Third case we *are* managing the package but it is no longer required
                 None => {
+                    println!("Package {} is no longer required", dist.name());
+
                     // Add to the extraneous list
                     // as we do manage it but have no need for it
                     extraneous.push(dist.clone());
@@ -623,12 +660,22 @@ impl InstallPlanner {
             }
         }
 
+        // println!(
+        //     "prev_installed_packages: {:?}\nextraneous: {:?}\nreinstalls: {:?}\nlocal: {:?}\nremote: {:?}",
+        //     prev_installed_packages,
+        //     extraneous,
+        //     reinstalls,
+        //     local,
+        //     remote,
+        // );
+
         // Now we need to check if we have any packages left in the required_map
         for (name, pkg) in required_pkgs
             .iter()
             // Only check the packages that have not been previously installed
             .filter(|(name, _)| !prev_installed_packages.contains(name))
         {
+            println!("Deciding how to install {}", name);
             // Decide if we need to get the distribution from the local cache or the registry
             self.decide_installation_source(
                 name,
@@ -731,6 +778,27 @@ fn locked_indexes_to_index_locations(
     Ok(IndexLocations::new(indexes, flat_index, no_index))
 }
 
+pub fn build_reqwest_client() -> Result<Client, Box<dyn Error>> {
+    let app_user_agent = "dof/0.0.1";
+    let tls_no_verify = false;
+    if tls_no_verify {
+        tracing::warn!("TLS verification is disabled. This is insecure and should only be used for testing or internal networks.");
+    }
+
+    let timeout = 5 * 60;
+    Ok(
+        Client::builder()
+            .pool_max_idle_per_host(20)
+            .user_agent(app_user_agent)
+            .danger_accept_invalid_certs(tls_no_verify)
+            .read_timeout(Duration::from_secs(timeout))
+            .use_rustls_tls()
+            .build()
+            .expect("failed to create reqwest Client")
+    )
+}
+
+
 /// Install the given packages into the prefix.
 ///
 /// If the packages exist in the cache, those will be used. Otherwise, download the requested
@@ -788,7 +856,8 @@ async fn install_pypi_packages(
 
     // uv registry settings
     let config_settings = ConfigSettings::default();
-    let client = Client::new();
+    let client = build_reqwest_client()?;
+
     let keyring_provider = KeyringProviderType::Disabled;
     let pypi_indexes: Option<&PypiIndexes> = None;
     let index_locations = pypi_indexes
@@ -811,7 +880,7 @@ async fn install_pypi_packages(
         RegistryClientBuilder::new(uv_cache.clone())
             .client(client.clone())
             // Allow connectsion to arbitrary insecure servers (e.g. localhost:8000) as registries
-            // .allow_insecure_host(uv_context.allow_insecure_host.clone())
+            // .allow_insecure_host(vec![])
             .index_urls(index_locations.index_urls())
             .keyring(keyring_provider)
             .connectivity(Connectivity::Online)
@@ -915,8 +984,9 @@ async fn install_pypi_packages(
         &required_map,
     )?;
 
-    println!("Install plan generated.\n  local: {:?}\n  remote: {:?}\n  reinstalls: {:?}\n  extraneous: {:?}", local, remote, reinstalls, extraneous);
+    // println!("Install plan generated.\n  local: {:?}\n  remote: {:?}\n  reinstalls: {:?}\n  extraneous: {:?}", local, remote, reinstalls, extraneous);
 
+    println!("Install plan generated. acquire_missing_distributions...");
     let remote_dists = acquire_missing_distributions(
         remote,
         Arc::clone(&registry_client),
@@ -929,6 +999,7 @@ async fn install_pypi_packages(
         &in_flight,
     ).await?;
 
+    println!("Removing unnecessary packages...");
     let _ = remove_unncessary_packages(extraneous, reinstalls).await;
 
     // Install the resolved distributions.
@@ -1000,6 +1071,7 @@ async fn acquire_missing_distributions<'a>(
                 &resolution,
             )
             .await?;
+            //.map_err(|err| "Could not prepare the remote dists.")?;
 
         Ok(remote_dists)
     }
@@ -1072,8 +1144,8 @@ fn extract_locked_package<'py>(
     );
 
     let package_hashes: Bound<'py, PyAny> = obj.getattr("hashes")?;
-    let md5: Bound<'py, PyAny> = package_hashes.getattr("md5")?;
-    let sha256: Bound<'py, PyAny> = package_hashes.getattr("sha256")?;
+    let _md5: Bound<'py, PyAny> = package_hashes.getattr("md5")?;
+    let _sha256: Bound<'py, PyAny> = package_hashes.getattr("sha256")?;
 
     // let hash = PackageHashes::from_hashes(
     //     // Some(Md5Hash::from(md5.extract::<Vec<u8>>()?)),
@@ -1131,8 +1203,20 @@ fn install_pypi<'py>(py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Opt
 
     let rs_locked_packages: Vec<LockedPackage> = py_pypi_locked_packages
         .iter()
-        .map(|&pkg| {
-            extract_locked_package(py, pkg).unwrap()
+        .filter_map(|&pkg| {
+            match extract_locked_package(py, pkg).unwrap().as_pypi() {
+                Some((data, env)) => {
+                    // Ignore editable packages for now
+                    if data.editable {
+                        None
+                    } else {
+                        Some(LockedPackage::Pypi(data.clone(), env.clone()))
+                    }
+                },
+                // Not a pypi package: ignore. This shouldn't happen, but
+                // rust requires it...
+                None => None
+            }
         })
         .collect();
 
@@ -1148,6 +1232,7 @@ fn install_pypi<'py>(py: Python<'py>, packages: &Bound<'py, PyList>, prefix: Opt
             &HashMap::new(),
         )
     ).map_err(|err| {
+        println!("{:?}", err);
         PyValueError::new_err("Error running PyPI install")
     });
     result

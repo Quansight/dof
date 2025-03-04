@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::path::Path;
 use std::str::FromStr;
+use miette::IntoDiagnostic;
 
 use url::Url;
 
@@ -118,11 +119,12 @@ pub fn to_uv_version(
 pub fn check_url_freshness(
     locked_url: &Url,
     installed_dist: &InstalledDist,
-) -> Result<bool, Box<dyn Error>> {
+) -> miette::Result<bool> {
     if let Ok(archive) = locked_url.to_file_path() {
         // This checks the entrypoints like `pyproject.toml`, `setup.cfg`, and
         // `setup.py` against the METADATA of the installed distribution
-        if ArchiveTimestamp::up_to_date_with(&archive, ArchiveTarget::Install(installed_dist))?
+        if ArchiveTimestamp::up_to_date_with(&archive, ArchiveTarget::Install(installed_dist))
+            .into_diagnostic()?
         {
             tracing::debug!("Requirement already satisfied (and up-to-date): {installed_dist}");
             Ok(true)
@@ -243,13 +245,18 @@ pub fn convert_to_dist(
         }
         UrlOrPath::Path(path) => {
             let native_path = Path::new(path.as_str());
-            let abs_path = if path.is_absolute() {
-                native_path.to_path_buf()
-            } else {
-                lock_file_dir.join(native_path)
-            };
 
+            if !path.is_absolute() {
+                return Err(
+                    format!(
+                        "Attempting to install package '{}' from a relative path, which is unsupported. Aborting.",
+                        pkg.name
+                    ).into()
+                )
+            }
+            let abs_path = native_path.to_path_buf();
             let absolute_url = uv_pep508::VerbatimUrl::from_absolute_path(&abs_path)?;
+
             let pkg_name =
                 uv_normalize::PackageName::new(pkg.name.to_string()).expect("should be correct");
             if abs_path.is_dir() {
