@@ -984,9 +984,24 @@ async fn install_pypi_packages(
         &required_map,
     )?;
 
-    // println!("Install plan generated.\n  local: {:?}\n  remote: {:?}\n  reinstalls: {:?}\n  extraneous: {:?}", local, remote, reinstalls, extraneous);
+    println!("Install plan generated. Locally cached packages:");
+    for pkg in &local {
+        println!("  {}", pkg.name());
+    }
+    println!("Packages to retrieve from PyPI:");
+    for pkg in &remote {
+        println!("  {}", pkg.name());
+    }
+    println!("Reinstalls:");
+    for pkg in &reinstalls {
+        println!("  {}", pkg.name());
+    }
+    println!("To be removed:");
+    for pkg in &extraneous {
+        println!("  {}", pkg.name());
+    }
 
-    println!("Install plan generated. acquire_missing_distributions...");
+    println!("Acquire_missing_distributions...");
     let remote_dists = acquire_missing_distributions(
         remote,
         Arc::clone(&registry_client),
@@ -1021,8 +1036,6 @@ async fn install_pypi_packages(
             .expect("should be able to install all distributions");
     }
     println!("Installation complete.");
-
-
     Ok(())
 }
 
