@@ -34,6 +34,7 @@ rattler_lock = "0.22.42"
 rattler_conda_types = { version = "0.30.2", default-features = false, features = [
   "rayon",
 ] }
+py-rattler = { git = "https://github.com/conda/rattler", tag="rattler-v0.33.4", package="py-rattler" }
 
 dirs = "6.0.0"
 fs-err = "3.1.0"
@@ -50,6 +51,6 @@ url = "2.5.4"
 percent-encoding = "2.3.1"
 
 [dependencies.pyo3]
-version = "0.22.6"
+version = "0.23.5"
 # "abi3-py38" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.8
 features = ["abi3-py38"]
