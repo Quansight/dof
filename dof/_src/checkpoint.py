@@ -110,4 +110,6 @@ class Checkpoint():
             with open(history_file, "w") as f:
                 f.write("# history file created with dof")
 
-
+    def to_docker(self):
+        # TODO
+        pass

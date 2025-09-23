@@ -1,6 +1,7 @@
 import os
 import typer
 from typing import List
+from typing_extensions import Annotated
 import asyncio
 
 from rich.table import Table
@@ -9,6 +10,7 @@ import rich
 from dof._src.checkpoint import Checkpoint
 from dof._src.data.local import LocalData
 from dof._src.utils import short_uuid
+from dof._src.constants import SupportedExportFormats
 
 
 checkpoint_command = typer.Typer(
@@ -31,7 +33,7 @@ def save(
         help="prefix to save"
     ),
 ):
-    """Create a checkpoint for the current state of an environemnt.
+    """Create a checkpoint for the current state of an environment.
     
     If no prefix is specified, assumes the current conda environment.
     """
@@ -182,3 +184,37 @@ def show(
 
     for pkg in chck.list_packages():
         print(pkg)
+
+
+@checkpoint_command.command()
+def export(
+    ctx: typer.Context,
+    rev: str = typer.Option(
+        None,
+        help="uuid of the revision to export"
+    ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to export"
+    ),
+    format: Annotated[
+        SupportedExportFormats,
+        typer.Option(
+            default=...,
+            help="format to export to"
+        ),
+    ] = ...
+):
+    """Export the revision to given format"""
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+
+    if rev is None:
+        env_uuid = short_uuid()
+        chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
+    else:
+        chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
+
+    # TODO: export checkpoint
