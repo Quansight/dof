@@ -107,7 +107,7 @@ def install(
     ),
     prefix: str = typer.Option(
         None,
-        help="prefix to save"
+        help="prefix to install"
     ),
 ):
     """Install a previous revision of the environment"""
@@ -140,7 +140,7 @@ def diff(
     ),
     prefix: str = typer.Option(
         None,
-        help="prefix to save"
+        help="prefix to diff"
     ),
 ):
     """Generate a diff of the current environment to the specified revision"""
@@ -167,7 +167,7 @@ def show(
     ),
     prefix: str = typer.Option(
         None,
-        help="prefix to save"
+        help="prefix to show"
     ),
 ):
     """Generate a list packages in an environment revision"""

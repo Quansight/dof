@@ -6,6 +6,10 @@ from conda.core.prefix_data import PrefixData
 from rattler import Platform
 from rattler import install as rattler_install
 
+from dof._src.constants import (
+    DEFAULT_DOCKER_EXPORT_BASE_IMAGE,
+    DOCKER_EXPORT_TEMPLATE,
+)
 from dof._src.models import package, environment
 from dof._src.utils import hash_string
 from dof._src.data.local import LocalData
@@ -110,6 +114,6 @@ class Checkpoint():
             with open(history_file, "w") as f:
                 f.write("# history file created with dof")
 
-    def to_docker(self):
+    def to_docker(self, base_image: str = DEFAULT_DOCKER_EXPORT_BASE_IMAGE):
         # TODO
         pass
