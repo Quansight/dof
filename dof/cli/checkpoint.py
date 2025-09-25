@@ -213,7 +213,8 @@ def export(
 
     if rev is None:
         env_uuid = short_uuid()
-        chck = Checkpoint.from_prefix(prefix=prefix, uuid=env_uuid)
+        tags = [env_uuid]
+        chck = Checkpoint.from_prefix(prefix=prefix, tags=tags, uuid=env_uuid)
     else:
         chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
 
