@@ -217,4 +217,7 @@ def export(
     else:
         chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
 
-    # TODO: export checkpoint
+    if format == SupportedExportFormats.DOCKER:
+        assets_dir, tags = chck.to_docker()
+        print(f"Docker build assets available at: {assets_dir}")
+        print(f"Docker image available at tags: {' '.join(tags)}")
