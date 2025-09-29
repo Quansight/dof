@@ -1,7 +1,9 @@
+import asyncio
 import yaml
 import os
 import typer
 from typing_extensions import Annotated
+from pathlib import Path
 
 from dof._src.lock import lock_environment
 from dof._src.checkpoint import Checkpoint
@@ -108,3 +110,26 @@ def pull(
 
     chck = Checkpoint.from_checkpoint_dict(checkpoint_data=checkpoint_data, prefix=prefix)
     chck.save()
+
+
+@app.command()
+def install_checkpoint(
+    file: Annotated[
+        str,
+        typer.Option(
+            default=...,
+            help="full path to checkpoint file"
+        ),
+    ] = ...,
+    prefix: Annotated[
+        str,
+        typer.Option(
+            default=...,
+            help="prefix to install into"
+        ),
+    ] = ...
+):
+    """Install a checkpoint file to a prefix"""
+    checkpoint_data = yaml.safe_load(Path(file).read_text())
+    chck = Checkpoint.from_checkpoint_dict(checkpoint_data=checkpoint_data, prefix=prefix)
+    asyncio.run(chck.install_with_rattler())

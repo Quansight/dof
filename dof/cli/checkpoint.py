@@ -1,6 +1,7 @@
 import os
 import typer
 from typing import List
+from typing_extensions import Annotated
 import asyncio
 
 from rich.table import Table
@@ -9,6 +10,7 @@ import rich
 from dof._src.checkpoint import Checkpoint
 from dof._src.data.local import LocalData
 from dof._src.utils import short_uuid
+from dof._src.constants import SupportedExportFormats
 
 
 checkpoint_command = typer.Typer(
@@ -31,7 +33,7 @@ def save(
         help="prefix to save"
     ),
 ):
-    """Create a checkpoint for the current state of an environemnt.
+    """Create a checkpoint for the current state of an environment.
     
     If no prefix is specified, assumes the current conda environment.
     """
@@ -105,7 +107,7 @@ def install(
     ),
     prefix: str = typer.Option(
         None,
-        help="prefix to save"
+        help="prefix to install"
     ),
 ):
     """Install a previous revision of the environment"""
@@ -138,7 +140,7 @@ def diff(
     ),
     prefix: str = typer.Option(
         None,
-        help="prefix to save"
+        help="prefix to diff"
     ),
 ):
     """Generate a diff of the current environment to the specified revision"""
@@ -165,7 +167,7 @@ def show(
     ),
     prefix: str = typer.Option(
         None,
-        help="prefix to save"
+        help="prefix to show"
     ),
 ):
     """Generate a list packages in an environment revision"""
@@ -182,3 +184,41 @@ def show(
 
     for pkg in chck.list_packages():
         print(pkg)
+
+
+@checkpoint_command.command()
+def export(
+    ctx: typer.Context,
+    rev: str = typer.Option(
+        None,
+        help="uuid of the revision to export"
+    ),
+    prefix: str = typer.Option(
+        None,
+        help="prefix to export"
+    ),
+    format: Annotated[
+        SupportedExportFormats,
+        typer.Option(
+            default=...,
+            help="format to export to"
+        ),
+    ] = ...
+):
+    """Export the revision to given format"""
+    if prefix is None:
+        prefix = os.environ.get("CONDA_PREFIX")
+    else:
+        prefix = os.path.abspath(prefix)
+
+    if rev is None:
+        env_uuid = short_uuid()
+        tags = [env_uuid]
+        chck = Checkpoint.from_prefix(prefix=prefix, tags=tags, uuid=env_uuid)
+    else:
+        chck = Checkpoint.from_uuid(prefix=prefix, uuid=rev)
+
+    if format == SupportedExportFormats.DOCKER:
+        assets_dir, tags = chck.to_docker()
+        print(f"Docker build assets available at: {assets_dir}")
+        print(f"Docker image available at tags: {' '.join(tags)}")

@@ -1,11 +1,19 @@
 from typing import List, Dict
 import datetime
 import os
+import tempfile
+import yaml
+import subprocess
 
 from conda.core.prefix_data import PrefixData
 from rattler import Platform
 from rattler import install as rattler_install
 
+from dof._src.constants import (
+    DEFAULT_DOCKER_EXPORT_BASE_IMAGE,
+    DOCKER_EXPORT_TEMPLATE,
+)
+from dof._src.exceptions import DockerBuildFailed
 from dof._src.models import package, environment
 from dof._src.utils import hash_string
 from dof._src.data.local import LocalData
@@ -110,4 +118,32 @@ class Checkpoint():
             with open(history_file, "w") as f:
                 f.write("# history file created with dof")
 
+    def to_docker(self, base_image: str = DEFAULT_DOCKER_EXPORT_BASE_IMAGE) -> tuple[str, list[str]]:
+        assets_dir = tempfile.mkdtemp()
 
+        target_checkpoint_file = os.path.join(assets_dir, "checkpoint")
+        with open(target_checkpoint_file, "w") as file:
+            yaml.dump(self.env_checkpoint.model_dump(), file)
+
+        target_docker_file = os.path.join(assets_dir, "Dockerfile")
+        with open(target_docker_file, "w") as file:
+            file.write(DOCKER_EXPORT_TEMPLATE.format(
+                BASE_IMAGE=base_image,
+                PATH="{PATH}",  # HACK
+            ))
+
+        image_name = self.prefix.replace("/", "-")[1:]
+        tags = [f"{image_name}:{tag}" for tag in self.env_checkpoint.tags]
+
+        command = ["docker", "build"]
+        for tag in tags:
+            command += ["-t", tag]
+        command += ["."]
+
+        result = subprocess.run(command, capture_output=True, cwd=assets_dir)
+        if result.returncode != 0:
+            raise DockerBuildFailed(
+                command, assets_dir, result.stderr 
+            )
+
+        return assets_dir, tags

@@ -10,7 +10,7 @@ name = "dof"
 description = "demo conda environemnts"
 version = "0.0.1"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.14"
 keywords = ["conda"]
 authors = [
   { name = "Sophia Castellarin", email = "sophia.castellarin@quansight.com" },
